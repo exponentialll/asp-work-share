@@ -1,5 +1,5 @@
 /* ========================================================================
-   💊 ASP 업무 공유 — 지수 · 윤다경 공동 업무 공간
+   💊 ASP 업무 공유 — 지수 · 다경 공동 업무 공간
    Firestore로 실시간 동기화됩니다. 모든 입력은 Notion처럼 즉시 저장됩니다
    (별도의 "추가" 팝업 없이, 새 줄을 만들고 바로 타이핑하면 자동 저장).
    ======================================================================== */
@@ -10,12 +10,15 @@
   var MINOR_CATS = ['일간','주간','격주','월별','분기','반기','년별','필수','비정기'];
   var STATUSES = ['시작 전','진행 중','완료'];
   var STATUS_ORDER = { '진행 중':0, '시작 전':1, '완료':2 };
-  var PEOPLE = ['지수','윤다경'];
+  var PEOPLE = ['지수','다경'];
   var COMM_WORK_CATS = ['처방검토','중재(Intervention)','상담/교육','회의','데이터/통계','서류/행정','기타'];
   var COMM_DIRECTIONS = ['발신','수신','양방향'];
+  var COMM_DEPTS = ['간호팀','전산팀','질병청','ASP사무국','인재경영팀','약제팀','기타'];
   var IDEA_STATUSES = ['검토중','채택','보류'];
   var MANUAL_CATS = ['중재','TDM','행정','교육','시스템','개인 공부','기타'];
   var CADENCES = ['매일','주간','매달','분기별','반기별','년도별'];
+  var PERSONAL_BASE_CATS = ['회의','교육','TDM','기타'];
+  var MEETING_TYPES = ['주간회의','월간회의','ASP 팀회의'];
 
   var CAT_COLORS = {
     '교육':  { fg:'#7d7d7d', bg:'#efefef' },
@@ -34,8 +37,8 @@
     '보류':   { fg:'#c65c5c', bg:'#fbeaea' }
   };
   var PERSON_COLORS = {
-    '지수':   { fg:'#d6608a', bg:'#fbe9ef' },
-    '윤다경': { fg:'#4aa3a2', bg:'#e6f4f3' }
+    '지수': { fg:'#d6608a', bg:'#fbe9ef' },
+    '다경': { fg:'#4aa3a2', bg:'#e6f4f3' }
   };
   var SHARED_COLOR = { fg:'#5b8def', bg:'#e8eefd' };
   var DDAY_COLOR = { fg:'#c98a2f', bg:'#fdf1e0' };
@@ -43,6 +46,20 @@
     '발신': { fg:'#3b7dd8', bg:'#e8f0fd' },
     '수신': { fg:'#3fa15e', bg:'#e9f7ee' },
     '양방향':{ fg:'#8f5fd6', bg:'#f2ecfb' }
+  };
+  var COMM_DEPT_COLORS = {
+    '간호팀':     { fg:'#3b7dd8', bg:'#e8f0fd' },
+    '전산팀':     { fg:'#8f5fd6', bg:'#f2ecfb' },
+    '질병청':     { fg:'#c65c5c', bg:'#fbeaea' },
+    'ASP사무국':  { fg:'#d98a3d', bg:'#fdf1e4' },
+    '인재경영팀': { fg:'#4aa3a2', bg:'#e6f4f3' },
+    '약제팀':     { fg:'#d6608a', bg:'#fbe9ef' },
+    '기타':       { fg:'#9a9a9a', bg:'#f0f0f0' }
+  };
+  var MEETING_TYPE_COLORS = {
+    '주간회의':    { fg:'#3b7dd8', bg:'#e8f0fd' },
+    '월간회의':    { fg:'#8f5fd6', bg:'#f2ecfb' },
+    'ASP 팀회의':  { fg:'#d98a3d', bg:'#fdf1e4' }
   };
   var MANUAL_CAT_COLORS = {
     '중재':   { fg:'#8f5fd6', bg:'#f2ecfb' },
@@ -78,7 +95,7 @@
     '공지사항':'announcements', '업무 리스트':'tasks', '각자 업무리스트':'personal',
     '회의':'meetings', '아이디어':'ideas', '소통일지':'comms', '자료실':'files'
   };
-  // 자유 입력 텍스트(예: 소통일지 분류)에 고정 색상 팔레트가 없을 때, 글자 기반으로 일관된 파스텔 색을 만들어줍니다.
+  // 자유 입력 텍스트에 고정 색상 팔레트가 없을 때, 글자 기반으로 일관된 파스텔 색을 만들어줍니다.
   function hashColor(str){
     str = str || '';
     var hash = 0;
@@ -101,6 +118,14 @@
     var c = (colorMap && colorMap[label]) || { fg:'#888', bg:'#eee' };
     return '<span class="badge" style="color:'+c.fg+';background:'+c.bg+(extraStyle||'')+'">'+escapeHtml(label)+'</span>';
   }
+  function uniqNonEmpty(arr){
+    var out = [], seen = {};
+    (arr||[]).forEach(function(v){
+      v = (v||'').trim();
+      if(v && !seen[v]){ seen[v]=true; out.push(v); }
+    });
+    return out;
+  }
   var toastTimer=null;
   function showToast(msg){
     var t=document.getElementById('toast');
@@ -108,13 +133,16 @@
     clearTimeout(toastTimer);
     toastTimer=setTimeout(function(){ t.classList.remove('show'); }, 2200);
   }
-  function autoGrow(el){ el.style.height='auto'; el.style.height=el.scrollHeight+'px'; }
-  function autoGrowAll(){ document.querySelectorAll('textarea[data-field]').forEach(autoGrow); }
-  function addDaysStr(dateStr, n){
-    var d = new Date(dateStr+'T00:00:00');
-    d.setDate(d.getDate()+n);
-    return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());
+  // 문서형 내용칸(doc-content-input, 공지사항/회의/아이디어/업무매뉴얼 상세)만 내용에 맞춰 늘어나고,
+  // CSS max-height에 닿으면 그 이상은 늘어나지 않고 안에서 스크롤됩니다.
+  // 표 안의 칸(cell-textarea 등)은 늘어나지 않도록 별도로 두어(고정 높이) 행 높이가 서로 비슷하게 유지돼요.
+  function autoGrow(el){
+    el.style.height='auto';
+    var max = parseFloat(window.getComputedStyle(el).maxHeight);
+    var sh = el.scrollHeight;
+    el.style.height = (max && sh>max ? max : sh)+'px';
   }
+  function autoGrowAll(){ document.querySelectorAll('textarea.doc-content-input').forEach(autoGrow); }
   var WEEKDAY_KOR = ['일','월','화','수','목','금','토'];
 
   // ASP 정기업무의 "현재 기간"을 계산합니다. 기간이 바뀌면(예: 다음날/다음주) key가 자동으로
@@ -152,7 +180,7 @@
   }
 
   /* ---------------- Firebase ---------------- */
-  var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false;
+  var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false, weeklyMeetingChecked=false;
   function setSyncStatus(on, label){
     document.getElementById('syncDot').classList.toggle('on', on);
     document.getElementById('syncLabel').textContent = label;
@@ -217,16 +245,38 @@
   var COLLECTIONS = ['tasks','announcements','personal','meetings','ideas','comms','manuals','files','dday','pins','recurring'];
   var STATE_KEY = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'dday', pins:'pins', recurring:'recurring' };
   // 캘린더 탭은 모든 컬렉션의 날짜를 모아 보여주므로, dday를 포함한 모든 컬렉션 변경이 캘린더도 함께 갱신시켜야 합니다.
-  // pins/recurring/dday는 특정 메인 탭에 속하지 않고 사이드바(또는 자체 탭)에서만 쓰이므로 tab이 null일 수 있습니다.
-  var TAB_FOR_COLLECTION = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar', pins:null, recurring:'recurring' };
+  // pins는 사이드바 전용, recurring은 업무 리스트 탭 안의 패널에서 쓰이므로 tasks에 매핑합니다.
+  var TAB_FOR_COLLECTION = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar', pins:null, recurring:'tasks' };
 
   function attachListeners(){
     COLLECTIONS.forEach(function(col){
       db.collection(col).onSnapshot(function(snap){
         state[STATE_KEY[col]] = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
         onDataChanged(TAB_FOR_COLLECTION[col]);
+        if(col==='meetings') ensureWeeklyMeeting();
       }, handleSnapError);
     });
+  }
+
+  // 매주 금요일 오후 4시 "주간회의"가 없으면 자동으로 만들어줍니다. 문서 ID를 날짜 기반으로 고정해서
+  // 두 사람이 동시에 접속해도 중복 생성되지 않아요.
+  function ensureWeeklyMeeting(){
+    if(!db || weeklyMeetingChecked) return;
+    weeklyMeetingChecked = true;
+    var now = new Date();
+    var dow = now.getDay();
+    var daysUntilFri = (5 - dow + 7) % 7;
+    var fri = new Date(now.getFullYear(), now.getMonth(), now.getDate()+daysUntilFri);
+    var friStr = fri.getFullYear()+'-'+pad2(fri.getMonth()+1)+'-'+pad2(fri.getDate());
+    var id = 'auto-weekly-'+friStr;
+    db.collection('meetings').doc(id).get().then(function(snap){
+      if(!snap.exists){
+        db.collection('meetings').doc(id).set({
+          meetingType:'주간회의', title:'주간회의', date:friStr, time:'16:00',
+          attendees:[], content:'', clientTs:Date.now(), createdAt:Date.now(), createdBy:'자동 생성'
+        });
+      }
+    }).catch(function(err){ console.error(err); });
   }
 
   // 사용자가 지금 어떤 입력칸에 타이핑 중이면, 서버에서 새 데이터가 와도 화면을 다시 그리지 않고
@@ -281,7 +331,6 @@
   }
 
   /* ---------------- 중첩 배열 필드 (파일 링크 목록) 저장 헬퍼 ---------------- */
-  // 업무매뉴얼 / 소통일지의 "첨부 파일" 목록처럼 문서 안에 배열로 들어있는 항목을 다룹니다.
   function getNestedArray(col, docId, arrField){
     var doc = (state[col]||[]).find(function(x){ return x.id===docId; });
     return doc ? (doc[arrField]||[]).slice() : [];
@@ -320,19 +369,32 @@
   // 실제 파일을 Firebase Storage에 업로드합니다 (Blaze 요금제 + Storage 활성화가 되어 있어야 동작해요).
   function uploadFile(col, docId, file){
     if(!requireFirebase()) return;
-    if(!storage){
-      showToast('파일 업로드를 쓰려면 Firebase Storage 설정이 필요해요 (README 7단계 참고)');
-      return;
-    }
+    if(!storage){ showToast('파일 업로드를 쓰려면 Firebase Storage 설정이 필요해요 (README 6단계 참고)'); return; }
     var path = col+'/'+docId+'/'+Date.now()+'_'+file.name;
     var ref = storage.ref().child(path);
     showToast('업로드 중...');
-    ref.put(file).then(function(snap){
-      return snap.ref.getDownloadURL();
-    }).then(function(url){
+    ref.put(file).then(function(snap){ return snap.ref.getDownloadURL(); }).then(function(url){
       var arr = getNestedArray(col, docId, 'files');
       arr.push({ id:uid(), name:file.name, url:url });
       saveNestedArray(col, docId, 'files', arr);
+      showToast('업로드 완료');
+    }).catch(function(err){
+      console.error(err);
+      showToast('업로드 실패: '+(err && err.message ? err.message : 'Storage 설정을 확인하세요'));
+    });
+  }
+  // 자료실처럼 문서 하나에 파일이 1개만 붙는 경우 (url 필드에 바로 저장)
+  function uploadSingleField(col, docId, file){
+    if(!requireFirebase()) return;
+    if(!storage){ showToast('파일 업로드를 쓰려면 Firebase Storage 설정이 필요해요 (README 6단계 참고)'); return; }
+    var path = col+'/'+docId+'/'+Date.now()+'_'+file.name;
+    var ref = storage.ref().child(path);
+    showToast('업로드 중...');
+    ref.put(file).then(function(snap){ return snap.ref.getDownloadURL(); }).then(function(url){
+      var payload = { url:url, updatedAt:Date.now() };
+      var doc = (state[col]||[]).find(function(x){ return x.id===docId; });
+      if(doc && !doc.title) payload.title = file.name;
+      db.collection(col).doc(docId).update(payload).catch(function(err){ showToast('저장 실패: '+err.message); });
       showToast('업로드 완료');
     }).catch(function(err){
       console.error(err);
@@ -361,7 +423,7 @@
     '</div>';
   }
 
-  /* ---------------- 비고 / 댓글 (업무 리스트: 언제 뭐가 바뀌었는지 기록) ---------------- */
+  /* ---------------- 비고 / 댓글 ---------------- */
   function addComment(col, docId, text){
     if(!requireFirebase() || !requireWho()) return;
     text = (text||'').trim();
@@ -387,6 +449,15 @@
     '</div>';
   }
 
+  /* ---------------- 각자 업무리스트: 분류 옵션 (기본 + 직접 추가한 것들) ---------------- */
+  function personalCategoryOptions(current){
+    var used = uniqNonEmpty(state.personal.map(function(p){ return p.category; }));
+    var all = PERSONAL_BASE_CATS.slice();
+    used.forEach(function(c){ if(all.indexOf(c)===-1) all.push(c); });
+    if(current && all.indexOf(current)===-1) all.push(current);
+    return all;
+  }
+
   /* ---------------- State ---------------- */
   var state = {
     activeTab:'announcements',
@@ -394,14 +465,23 @@
     tasks: [], announcements: [], personal: [], meetings: [], ideas: [], comms: [], manuals: [], files: [], dday: [], pins: [], recurring: [],
     taskFilterPerson: 'all',
     taskFilterStatus: 'all',
-    taskActiveMajor: MAJOR_CATS[0],
-    taskSortField: null, // null이면 기본 정렬(진행도→최신순), 아니면 헤더 클릭으로 선택한 필드
+    taskActiveMajor: '전체',
+    taskSortField: null,
     taskSortDir: 'asc',
+    taskEndDateOpen: {},
+    taskShowRecurringPanel: false,
     personalActiveOwner: PEOPLE[0],
-    manualActiveId: null, // null이면 목록 화면, id가 있으면 그 매뉴얼의 상세 화면
+    personalDeadlineOpen: {},
+    manualActiveCat: MANUAL_CATS[0],
+    manualActiveId: null,
+    meetingActiveType: MEETING_TYPES[0],
+    meetingActiveId: null,
+    announcementActiveId: null,
+    commSortField: null,
+    commSortDir: 'asc',
     calMonth: (function(){ var d=new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1); })(),
     calSelectedDate: null,
-    calFilter: 'all' // all | shared | 지수 | 윤다경
+    calFilter: 'all'
   };
 
   document.getElementById('whoSelect').value = state.who;
@@ -426,7 +506,6 @@
     if(state.activeTab==='announcements') c.innerHTML = renderAnnouncementsTab();
     else if(state.activeTab==='calendar') c.innerHTML = renderCalendarTab();
     else if(state.activeTab==='tasks') c.innerHTML = renderTasksTab();
-    else if(state.activeTab==='recurring') c.innerHTML = renderRecurringTab();
     else if(state.activeTab==='personal') c.innerHTML = renderPersonalTab();
     else if(state.activeTab==='meetings') c.innerHTML = renderMeetingsTab();
     else if(state.activeTab==='ideas') c.innerHTML = renderIdeasTab();
@@ -514,20 +593,36 @@
     '</div>';
   }
 
-  /* ================= 📢 공지사항 ================= */
+  /* ================= 📢 공지사항 (게시판: 목록 → 클릭 → 상세) ================= */
   function renderAnnouncementsTab(){
+    if(state.announcementActiveId){
+      var a = state.announcements.find(function(x){ return x.id===state.announcementActiveId; });
+      if(a) return renderAnnouncementDetail(a);
+      state.announcementActiveId = null;
+    }
     var items = state.announcements.slice().sort(function(a,b){ return (b.clientTs||0)-(a.clientTs||0); });
-    var listHtml = items.length ? items.map(renderAnnouncementCard).join('') : '<div class="empty-state">등록된 공지사항이 없습니다.</div>';
+    var rows = items.map(function(a){
+      return '<tr class="board-row" data-action="open-announcement" data-id="'+a.id+'">'+
+        '<td style="white-space:nowrap;width:120px;">'+escapeHtml(a.date||fmtTs(a.clientTs))+'</td>'+
+        '<td class="board-title-cell">'+escapeHtml(a.title||'(제목 없음)')+'</td>'+
+        '<td class="task-content-preview" style="width:90px;">'+escapeHtml(a.createdBy||'')+'</td>'+
+      '</tr>';
+    }).join('');
+    var listHtml = items.length ?
+      '<table class="board-table"><thead><tr><th style="width:120px">날짜</th><th>제목</th><th style="width:90px">작성자</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      : '<div class="empty-state">등록된 공지사항이 없습니다.</div>';
     return '<div class="card">'+
       '<div class="card-head"><h3>📢 공지사항</h3><button class="btn" data-action="add-announcement">+ 새 공지 추가</button></div>'+
+      '<div class="table-hint">제목을 클릭하면 내용을 볼 수 있어요.</div>'+
       listHtml+
     '</div>';
   }
-  function renderAnnouncementCard(a){
-    return '<div class="doc-item" data-id="'+a.id+'">'+
-      '<div class="doc-item-head">'+
+  function renderAnnouncementDetail(a){
+    return '<div class="card">'+
+      '<button class="btn ghost sm" data-action="close-announcement">← 목록으로</button>'+
+      '<div class="doc-item-head" style="margin-top:12px;">'+
         '<input type="text" class="doc-title-input" placeholder="공지 제목" data-collection="announcements" data-id="'+a.id+'" data-field="title" value="'+escapeHtml(a.title||'')+'">'+
-        '<button class="icon-btn danger" data-action="del-row" data-collection="announcements" data-id="'+a.id+'" title="삭제">✕</button>'+
+        '<button class="icon-btn danger" data-action="del-announcement-and-close" data-id="'+a.id+'" title="삭제">✕</button>'+
       '</div>'+
       '<div class="note-meta">'+(a.date||fmtTs(a.clientTs))+' · '+escapeHtml(a.createdBy||'')+'</div>'+
       '<textarea class="doc-content-input" placeholder="공지 내용을 입력하세요" data-collection="announcements" data-id="'+a.id+'" data-field="content">'+escapeHtml(a.content||'')+'</textarea>'+
@@ -540,8 +635,6 @@
   }
 
   /* ================= 📅 캘린더 (모든 게시판 날짜 통합) ================= */
-  // 각 게시판 항목의 날짜를 모아 하나의 캘린더로 보여줍니다.
-  // 담당자가 1명뿐인 업무/각자 업무리스트는 "개인 일정"으로, 그 외(담당자 없음/2명 이상, 공지·회의·아이디어·소통일지·자료실)는 "공동 일정"으로 분류합니다.
   function classifyTask(t){
     var as = t.assignees || [];
     if(as.length===1) return { type:'개인', owner:as[0] };
@@ -560,10 +653,10 @@
     return list;
   }
   function matchesCalFilter(item){
-    if(item.cls.type==='중요') return true; // 중요 일정은 필터와 무관하게 항상 표시
+    if(item.cls.type==='중요') return true;
     if(state.calFilter==='all') return true;
     if(state.calFilter==='shared') return item.cls.type==='공동';
-    return item.cls.owner===state.calFilter; // 지수 | 윤다경
+    return item.cls.owner===state.calFilter;
   }
   function calItemColor(item){
     if(item.cls.type==='중요') return DDAY_COLOR;
@@ -597,7 +690,7 @@
       gridHtml += '<div class="'+cls+'" data-action="select-cal-date" data-date="'+dateStr+'"><span class="cal-daynum">'+d+'</span><div class="cal-dots">'+dots+more+'</div></div>';
     }
 
-    var filterOpts = [['all','전체'],['shared','공동 일정'],['지수','지수 개인'],['윤다경','윤다경 개인']].map(function(o){
+    var filterOpts = [['all','전체'],['shared','공동 일정'],['지수','지수 개인'],['다경','다경 개인']].map(function(o){
       return '<option value="'+o[0]+'"'+(state.calFilter===o[0]?' selected':'')+'>'+o[1]+'</option>';
     }).join('');
 
@@ -620,7 +713,7 @@
 
     return '<div class="card">'+
         '<div class="card-head"><h3>📌 중요 일정 D-day</h3><button class="btn" data-action="add-dday">+ 중요 일정 추가</button></div>'+
-        (renderDdayRows())+
+        renderDdayRows()+
       '</div>'+
       '<div class="card">'+
         '<div class="card-head"><h3>📅 '+year+'년 '+(month+1)+'월</h3>'+
@@ -658,8 +751,8 @@
     return rows || '<div class="empty-state">등록된 중요 일정이 없습니다.</div>';
   }
 
-  /* ================= ✅ ASP 정기업무 현황 (체크리스트) ================= */
-  function renderRecurringTab(){
+  /* ================= ✅ ASP 정기업무 현황 (업무 리스트 탭 안의 패널) ================= */
+  function renderRecurringContent(){
     var doneCount = 0;
     var groups = CADENCES.map(function(cad){
       var pi = periodInfo(cad);
@@ -685,15 +778,12 @@
       '</div>';
     }).join('');
     var total = state.recurring.length;
-    return '<div class="card">'+
-      '<div class="card-head"><h3>✅ ASP 정기업무 현황</h3><span class="recur-progress">'+doneCount+' / '+total+' 완료</span></div>'+
-      '<div class="table-hint">주기가 바뀌면(다음날/다음주/다음달 등) 자동으로 다시 "대기" 상태가 돼요.</div>'+
-      groups+
-    '</div>';
+    return '<div class="recur-panel-head"><span class="recur-progress">'+doneCount+' / '+total+' 완료</span>'+
+      '<span class="table-hint" style="margin:0;">주기가 바뀌면(다음날/다음주/다음달 등) 자동으로 다시 "대기" 상태가 돼요.</span></div>'+
+      groups;
   }
 
-  /* ================= 📋 업무 리스트 (대분류별 탭) ================= */
-  var TASK_SORT_LABELS = { date:'날짜', status:'진행도', assignees:'담당자' };
+  /* ================= 📋 업무 리스트 (대분류별 탭 + 전체 보기) ================= */
   function taskSortValue(t, field){
     if(field==='date') return t.date || '';
     if(field==='status') return STATUS_ORDER[t.status]===undefined ? 9 : STATUS_ORDER[t.status];
@@ -723,38 +813,44 @@
   }
 
   function renderTasksTab(){
-    var activeMajor = state.taskActiveMajor || MAJOR_CATS[0];
+    var activeMajor = state.taskActiveMajor || '전체';
     var filtered = state.tasks.filter(function(t){
-      if((t.major||MAJOR_CATS[0])!==activeMajor) return false;
+      if(activeMajor!=='전체' && (t.major||MAJOR_CATS[0])!==activeMajor) return false;
       if(state.taskFilterPerson!=='all' && (t.assignees||[]).indexOf(state.taskFilterPerson)===-1) return false;
       if(state.taskFilterStatus!=='all' && t.status!==state.taskFilterStatus) return false;
       return true;
     });
     var sorted = sortTasks(filtered);
+    var showMajorCol = activeMajor==='전체';
 
-    var tabsHtml = MAJOR_CATS.map(function(cat){
-      var cnt = state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===cat; }).length;
-      var cc = CAT_COLORS[cat];
+    var allTabs = ['전체'].concat(MAJOR_CATS);
+    var tabsHtml = allTabs.map(function(cat){
+      var cnt = cat==='전체' ? state.tasks.length : state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===cat; }).length;
+      var cc = cat==='전체' ? SHARED_COLOR : CAT_COLORS[cat];
       var isActive = cat===activeMajor;
       var style = isActive ? 'background:'+cc.bg+';color:'+cc.fg+';border-color:'+cc.bg+';' : '';
       return '<button class="subtab-btn" data-action="task-set-major" data-major="'+cat+'" style="'+style+'">'+cat+' <span class="subtab-count">'+cnt+'</span></button>';
     }).join('');
 
     var headRow = '<tr>'+
+      (showMajorCol ? '<th style="min-width:80px">분류</th>' : '')+
       '<th style="min-width:220px">업무 (소분류 · 업무명)</th>'+
-      '<th style="min-width:220px">내용</th>'+
-      '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:200px">날짜'+sortArrow('date')+'</th>'+
+      '<th style="min-width:200px">내용</th>'+
+      '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:190px">날짜'+sortArrow('date')+'</th>'+
       '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:100px">담당자'+sortArrow('assignees')+'</th>'+
       '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:100px">진행도'+sortArrow('status')+'</th>'+
-      '<th style="min-width:150px">비고</th><th></th>'+
+      '<th style="min-width:120px">비고</th>'+
+      '<th style="min-width:110px">첨부</th><th></th>'+
     '</tr>';
 
     var tableHtml = sorted.length ?
-      '<div class="table-scroll"><table><thead>'+headRow+'</thead><tbody>'+sorted.map(renderTaskRow).join('')+'</tbody></table></div>'
+      '<div class="table-scroll"><table><thead>'+headRow+'</thead><tbody>'+sorted.map(function(t){ return renderTaskRow(t, showMajorCol); }).join('')+'</tbody></table></div>'
       : '<div class="empty-state">"'+activeMajor+'" 분류에 등록된 업무가 없습니다. "+ 업무 추가"를 눌러보세요.</div>';
 
     var personOpts = '<option value="all">담당자 전체</option>'+PEOPLE.map(function(p){ return '<option value="'+p+'"'+(state.taskFilterPerson===p?' selected':'')+'>'+p+'</option>'; }).join('');
     var statusOpts = '<option value="all">진행도 전체</option>'+STATUSES.map(function(s){ return '<option value="'+s+'"'+(state.taskFilterStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
+
+    var recurringPanel = state.taskShowRecurringPanel ? '<div class="recur-panel">'+renderRecurringContent()+'</div>' : '';
 
     return '<div class="card">'+
       '<div class="card-head">'+
@@ -762,16 +858,18 @@
         '<div class="toolbar">'+
           '<select id="filterPerson">'+personOpts+'</select>'+
           '<select id="filterStatus">'+statusOpts+'</select>'+
+          '<button class="btn ghost" data-action="toggle-recurring-panel">'+(state.taskShowRecurringPanel?'✅ 정기업무 닫기':'✅ 정기업무 현황')+'</button>'+
           '<button class="btn" data-action="add-task">+ 업무 추가</button>'+
         '</div>'+
       '</div>'+
+      recurringPanel+
       '<div class="subtab-bar">'+tabsHtml+'</div>'+
       '<div class="table-hint">열 제목을 클릭하면 정렬돼요. 소분류 배지를 눌러 주기를 바꿀 수 있어요.</div>'+
       tableHtml+
     '</div>';
   }
 
-  function renderTaskRow(t){
+  function renderTaskRow(t, showMajorCol){
     var curMinor = t.minor || '';
     var minorOpts = '<option value="">-</option>'+MINOR_CATS.map(function(c){ return '<option value="'+c+'"'+(t.minor===c?' selected':'')+'>'+c+'</option>'; }).join('');
     var mnc = MINOR_CAT_COLORS[curMinor] || {fg:'#888',bg:'#f0f0f0'};
@@ -782,19 +880,24 @@
       var checked = (t.assignees||[]).indexOf(p)>-1;
       return '<label><input type="checkbox" data-action="toggle-person" data-collection="tasks" data-array-field="assignees" data-id="'+t.id+'" data-person="'+p+'"'+(checked?' checked':'')+'>'+p+'</label>';
     }).join('');
-    var dateRangeHtml = '<input type="date" data-collection="tasks" data-id="'+t.id+'" data-field="date" value="'+escapeHtml(t.date||'')+'">'+
-      '<span class="date-arrow">→</span>'+
-      '<input type="date" data-collection="tasks" data-id="'+t.id+'" data-field="endDate" value="'+escapeHtml(t.endDate||'')+'" title="종료일 (선택)">';
+    var showEnd = !!t.endDate || !!state.taskEndDateOpen[t.id];
+    var dateHtml = '<input type="date" data-collection="tasks" data-id="'+t.id+'" data-field="date" value="'+escapeHtml(t.date||'')+'">'+
+      (showEnd ?
+        '<span class="date-arrow">→</span><input type="date" data-collection="tasks" data-id="'+t.id+'" data-field="endDate" value="'+escapeHtml(t.endDate||'')+'" title="마감일">'
+        : '<button type="button" class="btn ghost sm" data-action="show-task-enddate" data-id="'+t.id+'">+ 마감일</button>');
+    var fileCount = (t.files||[]).length;
     return '<tr data-id="'+t.id+'">'+
+      (showMajorCol ? '<td>'+badge(t.major||'미분류', CAT_COLORS)+'</td>' : '')+
       '<td><div class="task-title-cell">'+
         '<select class="status-select minor-select" data-collection="tasks" data-id="'+t.id+'" data-field="minor" style="background:'+mnc.bg+';color:'+mnc.fg+';">'+minorOpts+'</select>'+
         '<input type="text" class="cell-title-input" placeholder="업무명" data-collection="tasks" data-id="'+t.id+'" data-field="title" value="'+escapeHtml(t.title||'')+'">'+
       '</div></td>'+
       '<td><textarea class="cell-textarea" placeholder="내용/메모" data-collection="tasks" data-id="'+t.id+'" data-field="content">'+escapeHtml(t.content||'')+'</textarea></td>'+
-      '<td><div class="date-range">'+dateRangeHtml+'</div></td>'+
+      '<td><div class="date-range">'+dateHtml+'</div></td>'+
       '<td><div class="cell-check-group">'+peopleChecks+'</div></td>'+
       '<td><select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
       '<td><details class="filelink-details"><summary>💬'+((t.comments||[]).length?' '+t.comments.length:'')+'</summary>'+renderComments('tasks', t)+'</details></td>'+
+      '<td><details class="filelink-details"><summary>📎'+(fileCount?' '+fileCount:'')+'</summary>'+renderFileLinks('tasks', t)+'</details></td>'+
       '<td><button class="icon-btn danger" data-action="del-row" data-collection="tasks" data-id="'+t.id+'" title="삭제">✕</button></td>'+
     '</tr>';
   }
@@ -820,23 +923,29 @@
       '<div class="card-head"><h3>🙋 각자 업무리스트</h3><button class="btn" data-action="add-personal" data-owner="'+owner+'">+ 추가</button></div>'+
       '<div class="sheet-tab-bar">'+tabsHtml+'</div>'+
       (items.length ?
-        '<div class="table-scroll"><table><thead><tr><th style="min-width:100px">분류</th><th style="min-width:120px">이름</th><th style="min-width:200px">업무</th><th style="min-width:100px">진행도</th><th style="min-width:130px">시작</th><th style="min-width:130px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">URL</th><th style="min-width:110px">연락처</th><th></th></tr></thead>'+
+        '<div class="table-scroll"><table><thead><tr><th style="min-width:110px">분류</th><th style="min-width:130px">이름</th><th style="min-width:220px">업무</th><th style="min-width:110px">진행도</th><th style="min-width:140px">시작</th><th style="min-width:150px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:150px">URL</th><th style="min-width:120px">연락처</th><th></th></tr></thead>'+
         '<tbody>'+rows+'</tbody></table></div>'
         : '<div class="empty-state">등록된 업무가 없습니다. "+ 추가"를 눌러 지금 하고 있는 공부/업무를 기록해보세요.</div>')+
     '</div>';
   }
   function renderPersonalRow(p){
+    var catOptions = personalCategoryOptions(p.category);
+    var catOpts = catOptions.map(function(c){ return '<option value="'+c+'"'+(p.category===c?' selected':'')+'>'+c+'</option>'; }).join('') + '<option value="__new__">+ 직접 추가...</option>';
     var tc = hashColor(p.category||'');
     var curStatus = p.status || '시작 전';
     var sc = STATUS_COLORS[curStatus] || {fg:'#888',bg:'#eee'};
     var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
+    var showDeadline = !!p.deadline || !!state.personalDeadlineOpen[p.id];
+    var deadlineHtml = showDeadline ?
+      '<input type="date" data-collection="personal" data-id="'+p.id+'" data-field="deadline" value="'+escapeHtml(p.deadline||'')+'">'
+      : '<button type="button" class="btn ghost sm" data-action="show-personal-deadline" data-id="'+p.id+'">+ 마감일</button>';
     return '<tr data-id="'+p.id+'">'+
-      '<td><input type="text" class="tag-input" placeholder="분류" data-collection="personal" data-id="'+p.id+'" data-field="category" value="'+escapeHtml(p.category||'')+'" style="background:'+tc.bg+';color:'+tc.fg+';"></td>'+
+      '<td><select class="tag-select" data-collection="personal" data-id="'+p.id+'" data-field="category" style="background:'+tc.bg+';color:'+tc.fg+';">'+catOpts+'</select></td>'+
       '<td><input type="text" class="cell-title-input" placeholder="이름" data-collection="personal" data-id="'+p.id+'" data-field="title" value="'+escapeHtml(p.title||'')+'"></td>'+
       '<td><textarea class="cell-textarea" placeholder="업무 내용" data-collection="personal" data-id="'+p.id+'" data-field="content">'+escapeHtml(p.content||'')+'</textarea></td>'+
       '<td><select class="status-select" data-collection="personal" data-id="'+p.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
       '<td><input type="date" data-collection="personal" data-id="'+p.id+'" data-field="startDate" value="'+escapeHtml(p.startDate||'')+'"></td>'+
-      '<td><input type="date" data-collection="personal" data-id="'+p.id+'" data-field="deadline" value="'+escapeHtml(p.deadline||'')+'"></td>'+
+      '<td>'+deadlineHtml+'</td>'+
       '<td style="text-align:center;"><input type="checkbox" data-collection="personal" data-id="'+p.id+'" data-field="followUp"'+(p.followUp?' checked':'')+'></td>'+
       '<td><input type="text" class="cell-url-input" placeholder="URL" data-collection="personal" data-id="'+p.id+'" data-field="url" value="'+escapeHtml(p.url||'')+'"></td>'+
       '<td><input type="text" placeholder="연락처" data-collection="personal" data-id="'+p.id+'" data-field="contact" value="'+escapeHtml(p.contact||'')+'"></td>'+
@@ -844,27 +953,57 @@
     '</tr>';
   }
 
-  /* ================= 🗓 회의 ================= */
+  /* ================= 🗓 회의 (유형 탭 + 게시판) ================= */
   function renderMeetingsTab(){
-    var items = state.meetings.slice().sort(function(a,b){ return (b.clientTs||0)-(a.clientTs||0); });
-    var listHtml = items.length ? items.map(renderMeetingCard).join('') : '<div class="empty-state">등록된 회의록이 없습니다.</div>';
+    if(state.meetingActiveId){
+      var m = state.meetings.find(function(x){ return x.id===state.meetingActiveId; });
+      if(m) return renderMeetingDetail(m);
+      state.meetingActiveId = null;
+    }
+    var activeType = state.meetingActiveType || MEETING_TYPES[0];
+    var items = state.meetings.filter(function(m){ return (m.meetingType||MEETING_TYPES[0])===activeType; })
+      .sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
+    var tabsHtml = MEETING_TYPES.map(function(mt){
+      var cnt = state.meetings.filter(function(x){ return (x.meetingType||MEETING_TYPES[0])===mt; }).length;
+      var cc = MEETING_TYPE_COLORS[mt];
+      var isActive = mt===activeType;
+      var style = isActive ? 'background:'+cc.bg+';color:'+cc.fg+';border-color:'+cc.bg+';' : '';
+      return '<button class="subtab-btn" data-action="meeting-set-type" data-type="'+mt+'" style="'+style+'">'+mt+' <span class="subtab-count">'+cnt+'</span></button>';
+    }).join('');
+    var rows = items.map(function(m){
+      var peopleBadges = (m.attendees||[]).map(function(p){ return badge(p, PERSON_COLORS); }).join(' ');
+      return '<tr class="board-row" data-action="open-meeting" data-id="'+m.id+'">'+
+        '<td style="white-space:nowrap;width:140px;">'+escapeHtml(m.date||'')+(m.time?' '+escapeHtml(m.time):'')+'</td>'+
+        '<td class="board-title-cell">'+escapeHtml(m.title||'(제목 없음)')+'</td>'+
+        '<td style="width:150px;">'+peopleBadges+'</td>'+
+      '</tr>';
+    }).join('');
+    var listHtml = items.length ?
+      '<table class="board-table"><thead><tr><th style="width:140px">날짜</th><th>제목</th><th style="width:150px">참석자</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      : '<div class="empty-state">등록된 회의록이 없습니다.</div>';
     return '<div class="card">'+
-      '<div class="card-head"><h3>🗓 회의</h3><button class="btn" data-action="add-meeting">+ 새 회의 기록</button></div>'+
+      '<div class="card-head"><h3>🗓 회의</h3><button class="btn" data-action="add-meeting" data-type="'+activeType+'">+ 새 회의 기록</button></div>'+
+      '<div class="subtab-bar">'+tabsHtml+'</div>'+
+      '<div class="table-hint">제목을 클릭하면 회의 내용을 볼 수 있어요. 매주 금요일 오후 4시 주간회의는 자동으로 만들어져요.</div>'+
       listHtml+
     '</div>';
   }
-  function renderMeetingCard(m){
+  function renderMeetingDetail(m){
     var peopleChecks = PEOPLE.map(function(p){
       var checked = (m.attendees||[]).indexOf(p)>-1;
       return '<label><input type="checkbox" data-action="toggle-person" data-collection="meetings" data-array-field="attendees" data-id="'+m.id+'" data-person="'+p+'"'+(checked?' checked':'')+'>'+p+'</label>';
     }).join('');
-    return '<div class="doc-item" data-id="'+m.id+'">'+
-      '<div class="doc-item-head">'+
+    var typeOpts = MEETING_TYPES.map(function(mt){ return '<option value="'+mt+'"'+((m.meetingType||MEETING_TYPES[0])===mt?' selected':'')+'>'+mt+'</option>'; }).join('');
+    return '<div class="card">'+
+      '<button class="btn ghost sm" data-action="close-meeting">← 목록으로</button>'+
+      '<div class="doc-item-head" style="margin-top:12px;">'+
+        '<select class="status-select-sm" data-collection="meetings" data-id="'+m.id+'" data-field="meetingType">'+typeOpts+'</select>'+
         '<input type="text" class="doc-title-input" placeholder="회의 제목" data-collection="meetings" data-id="'+m.id+'" data-field="title" value="'+escapeHtml(m.title||'')+'">'+
-        '<button class="icon-btn danger" data-action="del-row" data-collection="meetings" data-id="'+m.id+'" title="삭제">✕</button>'+
+        '<button class="icon-btn danger" data-action="del-meeting-and-close" data-id="'+m.id+'" title="삭제">✕</button>'+
       '</div>'+
       '<div class="doc-meta-row">'+
         '<input type="date" data-collection="meetings" data-id="'+m.id+'" data-field="date" value="'+escapeHtml(m.date||todayStr())+'">'+
+        '<input type="time" class="meeting-time-input" data-collection="meetings" data-id="'+m.id+'" data-field="time" value="'+escapeHtml(m.time||'')+'">'+
         '<div class="cell-check-group">참석자: '+peopleChecks+'</div>'+
       '</div>'+
       '<textarea class="doc-content-input" placeholder="회의 내용, 결정사항 등을 입력하세요" data-collection="meetings" data-id="'+m.id+'" data-field="content">'+escapeHtml(m.content||'')+'</textarea>'+
@@ -890,24 +1029,52 @@
       '</div>'+
       '<div class="note-meta">'+(i.date||fmtTs(i.clientTs))+' · '+escapeHtml(i.createdBy||'')+'</div>'+
       '<textarea class="doc-content-input" placeholder="아이디어 내용을 입력하세요" data-collection="ideas" data-id="'+i.id+'" data-field="content">'+escapeHtml(i.content||'')+'</textarea>'+
+      renderFileLinks('ideas', i)+
     '</div>';
   }
 
-  /* ================= 💬 소통일지 ================= */
+  /* ================= 💬 소통일지 (분류 드롭다운 + 정렬) ================= */
+  function commSortValue(c, field){
+    if(field==='dept') return c.dept || '';
+    if(field==='workCategory') return COMM_WORK_CATS.indexOf(c.workCategory);
+    return '';
+  }
+  function sortComms(items){
+    if(!state.commSortField){
+      return items.slice().sort(function(a,b){ return (b.clientTs||0)-(a.clientTs||0); });
+    }
+    var dir = state.commSortDir==='desc' ? -1 : 1;
+    return items.slice().sort(function(a,b){
+      var av = commSortValue(a, state.commSortField), bv = commSortValue(b, state.commSortField);
+      if(av<bv) return -1*dir;
+      if(av>bv) return 1*dir;
+      return 0;
+    });
+  }
+  function commSortArrow(field){
+    if(state.commSortField!==field) return '';
+    return state.commSortDir==='asc' ? ' ▲' : ' ▼';
+  }
   function renderCommsTab(){
-    var items = state.comms.slice().sort(function(a,b){ return (b.clientTs||0)-(a.clientTs||0); });
+    var items = sortComms(state.comms);
     var rows = items.map(renderCommRow).join('');
     return '<div class="card">'+
       '<div class="card-head"><h3>💬 소통일지</h3><button class="btn" data-action="add-comm">+ 새 소통 기록</button></div>'+
-      '<div class="table-scroll"><table><thead><tr><th style="min-width:130px">날짜</th><th style="min-width:100px">분류</th><th style="min-width:130px">업무</th><th style="min-width:110px">대상</th><th style="min-width:200px">소통내역</th><th style="min-width:100px">수신/발신</th><th style="min-width:100px">전화번호</th><th style="min-width:100px">사람</th><th style="min-width:150px">비고</th><th>첨부</th><th></th></tr></thead>'+
+      '<div class="table-scroll"><table><thead><tr>'+
+      '<th style="min-width:130px">날짜</th>'+
+      '<th data-action="sort-comms" data-field="dept" class="sortable-th" style="min-width:120px">분류'+commSortArrow('dept')+'</th>'+
+      '<th data-action="sort-comms" data-field="workCategory" class="sortable-th" style="min-width:140px">업무'+commSortArrow('workCategory')+'</th>'+
+      '<th style="min-width:110px">대상</th><th style="min-width:200px">소통내역</th><th style="min-width:100px">수신/발신</th>'+
+      '<th style="min-width:100px">전화번호</th><th style="min-width:100px">사람</th><th style="min-width:150px">비고</th><th>첨부</th><th></th></tr></thead>'+
       '<tbody>'+(rows||'')+'</tbody></table></div>'+
       (rows ? '' : '<div class="empty-state">등록된 소통 기록이 없습니다.</div>')+
     '</div>';
   }
   function renderCommRow(c){
+    var deptOpts = COMM_DEPTS.map(function(d){ return '<option value="'+d+'"'+(c.dept===d?' selected':'')+'>'+d+'</option>'; }).join('');
+    var dc = COMM_DEPT_COLORS[c.dept] || {fg:'#888',bg:'#eee'};
     var workOpts = COMM_WORK_CATS.map(function(m){ return '<option value="'+m+'"'+(c.workCategory===m?' selected':'')+'>'+m+'</option>'; }).join('');
     var dirOpts = COMM_DIRECTIONS.map(function(m){ return '<option value="'+m+'"'+(c.direction===m?' selected':'')+'>'+m+'</option>'; }).join('');
-    var dc = hashColor(c.dept||'');
     var dirColor = DIRECTION_COLORS[c.direction] || {fg:'#888',bg:'#eee'};
     var peopleChecks = PEOPLE.map(function(p){
       var checked = (c.participants||[]).indexOf(p)>-1;
@@ -916,7 +1083,7 @@
     var fileCount = (c.files||[]).length;
     return '<tr data-id="'+c.id+'">'+
       '<td><input type="date" data-collection="comms" data-id="'+c.id+'" data-field="date" value="'+escapeHtml(c.date||todayStr())+'"></td>'+
-      '<td><input type="text" class="tag-input" placeholder="예: 간호팀" data-collection="comms" data-id="'+c.id+'" data-field="dept" value="'+escapeHtml(c.dept||'')+'" style="background:'+dc.bg+';color:'+dc.fg+';"></td>'+
+      '<td><select data-collection="comms" data-id="'+c.id+'" data-field="dept" style="background:'+dc.bg+';color:'+dc.fg+';">'+deptOpts+'</select></td>'+
       '<td><select data-collection="comms" data-id="'+c.id+'" data-field="workCategory">'+workOpts+'</select></td>'+
       '<td><input type="text" placeholder="상대방/부서" data-collection="comms" data-id="'+c.id+'" data-field="target" value="'+escapeHtml(c.target||'')+'"></td>'+
       '<td><textarea data-collection="comms" data-id="'+c.id+'" data-field="content" rows="1" placeholder="소통 내용 / 협의사항">'+escapeHtml(c.content||'')+'</textarea></td>'+
@@ -929,32 +1096,36 @@
     '</tr>';
   }
 
-  /* ================= 📔 업무매뉴얼 (게시판 형식: 목록 → 클릭 → 상세) ================= */
+  /* ================= 📔 업무매뉴얼 (분류 탭 + 게시판) ================= */
   function renderManualsTab(){
     if(state.manualActiveId){
       var m = state.manuals.find(function(x){ return x.id===state.manualActiveId; });
       if(m) return renderManualDetail(m);
       state.manualActiveId = null;
     }
-    var items = state.manuals.slice().sort(function(a,b){
-      var ao = MANUAL_CATS.indexOf(a.category), bo = MANUAL_CATS.indexOf(b.category);
-      if(ao!==bo) return ao-bo;
-      return (a.clientTs||0)-(b.clientTs||0);
-    });
+    var activeCat = state.manualActiveCat || MANUAL_CATS[0];
+    var items = state.manuals.filter(function(m){ return (m.category||MANUAL_CATS[0])===activeCat; })
+      .sort(function(a,b){ return (a.clientTs||0)-(b.clientTs||0); });
+    var tabsHtml = MANUAL_CATS.map(function(cat){
+      var cnt = state.manuals.filter(function(m){ return (m.category||MANUAL_CATS[0])===cat; }).length;
+      var cc = MANUAL_CAT_COLORS[cat];
+      var isActive = cat===activeCat;
+      var style = isActive ? 'background:'+cc.bg+';color:'+cc.fg+';border-color:'+cc.bg+';' : '';
+      return '<button class="subtab-btn" data-action="manual-set-cat" data-cat="'+cat+'" style="'+style+'">'+cat+' <span class="subtab-count">'+cnt+'</span></button>';
+    }).join('');
     var rows = items.map(function(m){
-      var cat = m.category || MANUAL_CATS[0];
       var fileCount = (m.files||[]).length;
       return '<tr class="board-row" data-action="open-manual" data-id="'+m.id+'">'+
-        '<td>'+badge(cat, MANUAL_CAT_COLORS)+'</td>'+
         '<td class="board-title-cell">'+escapeHtml(m.title||'(제목 없음)')+(fileCount?' <span class="manual-file-count">📎 '+fileCount+'</span>':'')+'</td>'+
-        '<td class="task-content-preview">'+escapeHtml(m.createdBy||'')+'</td>'+
+        '<td class="task-content-preview" style="width:100px;">'+escapeHtml(m.createdBy||'')+'</td>'+
       '</tr>';
     }).join('');
     var listHtml = items.length ?
-      '<table class="board-table"><thead><tr><th style="width:110px">분류</th><th>제목</th><th style="width:100px">작성자</th></tr></thead><tbody>'+rows+'</tbody></table>'
-      : '<div class="empty-state">등록된 업무매뉴얼이 없습니다. 중재·TDM·행정 등 업무별 매뉴얼이나 공부 자료를 정리해보세요.</div>';
+      '<table class="board-table"><thead><tr><th>제목</th><th style="width:100px">작성자</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      : '<div class="empty-state">"'+activeCat+'" 분류에 등록된 매뉴얼이 없습니다.</div>';
     return '<div class="card">'+
-      '<div class="card-head"><h3>📔 업무매뉴얼</h3><button class="btn" data-action="add-manual">+ 새 매뉴얼 작성</button></div>'+
+      '<div class="card-head"><h3>📔 업무매뉴얼</h3><button class="btn" data-action="add-manual" data-cat="'+activeCat+'">+ 새 매뉴얼 작성</button></div>'+
+      '<div class="subtab-bar">'+tabsHtml+'</div>'+
       '<div class="table-hint">제목을 클릭하면 내용을 볼 수 있어요.</div>'+
       listHtml+
     '</div>';
@@ -976,22 +1147,28 @@
     '</div>';
   }
 
-  /* ================= 🗂 자료실 ================= */
+  /* ================= 🗂 자료실 (실제 파일 업로드) ================= */
   function renderFilesTab(){
     var items = state.files.slice().sort(function(a,b){ return (b.clientTs||0)-(a.clientTs||0); });
     var rows = items.map(renderFileRow).join('');
     return '<div class="card">'+
-      '<div class="card-head"><h3>🗂 자료실 (링크 모음)</h3><button class="btn" data-action="add-file">+ 자료 링크 추가</button></div>'+
-      '<table><thead><tr><th>제목</th><th>링크 URL</th><th>분류</th><th>날짜</th><th>등록자</th><th></th></tr></thead>'+
+      '<div class="card-head"><h3>🗂 자료실</h3><button class="btn" data-action="add-file">+ 자료 추가</button></div>'+
+      '<table><thead><tr><th>제목</th><th>파일</th><th>분류</th><th>날짜</th><th>등록자</th><th></th></tr></thead>'+
       '<tbody>'+(rows||'')+'</tbody></table>'+
-      (rows ? '' : '<div class="empty-state">등록된 자료가 없습니다. 구글드라이브/원드라이브 등 링크를 등록해보세요.</div>')+
+      (rows ? '' : '<div class="empty-state">등록된 자료가 없습니다. "+ 자료 추가"로 파일을 올려보세요.</div>')+
     '</div>';
   }
   function renderFileRow(f){
-    var linkHtml = f.url ? '<a href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener" style="font-size:11px;color:var(--primary);">열기 ↗</a>' : '';
+    var uploadId = 'fileupload-'+f.id;
     return '<tr data-id="'+f.id+'">'+
       '<td><input type="text" placeholder="자료명" data-collection="files" data-id="'+f.id+'" data-field="title" value="'+escapeHtml(f.title||'')+'"></td>'+
-      '<td><input type="text" placeholder="https://..." data-collection="files" data-id="'+f.id+'" data-field="url" value="'+escapeHtml(f.url||'')+'"> '+linkHtml+'</td>'+
+      '<td>'+
+        (f.url ? '<a href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener" class="filelink-open">열기 ↗</a>' : '<span class="task-content-preview">업로드된 파일 없음</span>')+
+        '<div class="filelink-actions">'+
+          '<input type="file" class="filelink-upload-input hidden" id="'+uploadId+'" data-collection="files" data-id="'+f.id+'" data-single="1">'+
+          '<button class="btn ghost sm" type="button" data-action="trigger-upload" data-target="'+uploadId+'">📤 '+(f.url?'교체':'업로드')+'</button>'+
+        '</div>'+
+      '</td>'+
       '<td><input type="text" placeholder="분류" data-collection="files" data-id="'+f.id+'" data-field="category" value="'+escapeHtml(f.category||'')+'"></td>'+
       '<td><input type="date" data-collection="files" data-id="'+f.id+'" data-field="date" value="'+escapeHtml(f.date||todayStr())+'"></td>'+
       '<td class="task-content-preview">'+escapeHtml(f.createdBy||'')+'</td>'+
@@ -1008,14 +1185,26 @@
     var action = el.dataset.action;
     var col = el.dataset.collection, id = el.dataset.id;
 
-    if(action==='add-announcement') addRow('announcements', { title:'', content:'', date:todayStr() });
-    else if(action==='add-task') addRow('tasks', { major:state.taskActiveMajor, minor:'', title:'', date:todayStr(), endDate:'', status:'시작 전', content:'', assignees:[], comments:[] });
+    if(action==='add-announcement'){
+      addRow('announcements', { title:'', content:'', date:todayStr() }, function(newId){
+        state.announcementActiveId = newId;
+        renderActiveTab();
+      });
+    }
+    else if(action==='add-task') addRow('tasks', { major:(state.taskActiveMajor==='전체'?MAJOR_CATS[0]:state.taskActiveMajor), minor:'', title:'', date:todayStr(), endDate:'', status:'시작 전', content:'', assignees:[], comments:[], files:[] });
     else if(action==='add-personal') addRow('personal', { owner:el.dataset.owner, category:'', title:'', content:'', status:'시작 전', startDate:'', deadline:'', followUp:false, url:'', contact:'' });
-    else if(action==='add-meeting') addRow('meetings', { title:'', date:todayStr(), attendees:[], content:'' });
-    else if(action==='add-idea') addRow('ideas', { title:'', content:'', status:'검토중', date:todayStr() });
-    else if(action==='add-comm') addRow('comms', { date:todayStr(), dept:'', workCategory:COMM_WORK_CATS[0], target:'', content:'', direction:COMM_DIRECTIONS[0], ext:'', participants:[], note:'', files:[] });
+    else if(action==='add-meeting'){
+      var mType = el.dataset.type || state.meetingActiveType || MEETING_TYPES[0];
+      addRow('meetings', { meetingType:mType, title:'', date:todayStr(), time:'', attendees:[], content:'' }, function(newId){
+        state.meetingActiveId = newId;
+        renderActiveTab();
+      });
+    }
+    else if(action==='add-idea') addRow('ideas', { title:'', content:'', status:'검토중', date:todayStr(), files:[] });
+    else if(action==='add-comm') addRow('comms', { date:todayStr(), dept:COMM_DEPTS[0], workCategory:COMM_WORK_CATS[0], target:'', content:'', direction:COMM_DIRECTIONS[0], ext:'', participants:[], note:'', files:[] });
     else if(action==='add-manual'){
-      addRow('manuals', { category:MANUAL_CATS[0], title:'', content:'', files:[] }, function(newId){
+      var mCat = el.dataset.cat || state.manualActiveCat || MANUAL_CATS[0];
+      addRow('manuals', { category:mCat, title:'', content:'', files:[] }, function(newId){
         state.manualActiveId = newId;
         renderActiveTab();
       });
@@ -1038,29 +1227,43 @@
       var inputEl = el.parentElement.querySelector('.comment-input');
       if(inputEl){ addComment(col, id, inputEl.value); inputEl.value=''; }
     }
-    else if(action==='task-set-major'){
-      state.taskActiveMajor = el.dataset.major;
-      renderActiveTab();
-    }
-    else if(action==='personal-set-owner'){
-      state.personalActiveOwner = el.dataset.owner;
-      renderActiveTab();
-    }
-    else if(action==='open-manual'){
-      state.manualActiveId = id;
-      renderActiveTab();
-    }
+    else if(action==='task-set-major'){ state.taskActiveMajor = el.dataset.major; renderActiveTab(); }
+    else if(action==='toggle-recurring-panel'){ state.taskShowRecurringPanel = !state.taskShowRecurringPanel; renderActiveTab(); }
+    else if(action==='show-task-enddate'){ state.taskEndDateOpen[el.dataset.id] = true; renderActiveTab(); }
+    else if(action==='show-personal-deadline'){ state.personalDeadlineOpen[el.dataset.id] = true; renderActiveTab(); }
+    else if(action==='personal-set-owner'){ state.personalActiveOwner = el.dataset.owner; renderActiveTab(); }
+    else if(action==='manual-set-cat'){ state.manualActiveCat = el.dataset.cat; renderActiveTab(); }
+    else if(action==='open-manual'){ state.manualActiveId = id; renderActiveTab(); }
     else if(action==='close-manual'){
+      var mm = state.manuals.find(function(x){ return x.id===state.manualActiveId; });
+      if(mm) state.manualActiveCat = mm.category || MANUAL_CATS[0];
       state.manualActiveId = null;
       renderActiveTab();
     }
     else if(action==='del-manual-and-close'){
       if(!requireFirebase()) return;
       if(!confirm('이 매뉴얼을 삭제할까요?')) return;
-      db.collection('manuals').doc(id).delete().then(function(){
-        state.manualActiveId = null;
-        renderActiveTab();
-      }).catch(function(err){ showToast('삭제 실패: '+err.message); });
+      db.collection('manuals').doc(id).delete().then(function(){ state.manualActiveId=null; renderActiveTab(); }).catch(function(err){ showToast('삭제 실패: '+err.message); });
+    }
+    else if(action==='open-announcement'){ state.announcementActiveId = id; renderActiveTab(); }
+    else if(action==='close-announcement'){ state.announcementActiveId = null; renderActiveTab(); }
+    else if(action==='del-announcement-and-close'){
+      if(!requireFirebase()) return;
+      if(!confirm('이 공지사항을 삭제할까요?')) return;
+      db.collection('announcements').doc(id).delete().then(function(){ state.announcementActiveId=null; renderActiveTab(); }).catch(function(err){ showToast('삭제 실패: '+err.message); });
+    }
+    else if(action==='meeting-set-type'){ state.meetingActiveType = el.dataset.type; renderActiveTab(); }
+    else if(action==='open-meeting'){ state.meetingActiveId = id; renderActiveTab(); }
+    else if(action==='close-meeting'){
+      var mtg = state.meetings.find(function(x){ return x.id===state.meetingActiveId; });
+      if(mtg) state.meetingActiveType = mtg.meetingType || MEETING_TYPES[0];
+      state.meetingActiveId = null;
+      renderActiveTab();
+    }
+    else if(action==='del-meeting-and-close'){
+      if(!requireFirebase()) return;
+      if(!confirm('이 회의록을 삭제할까요?')) return;
+      db.collection('meetings').doc(id).delete().then(function(){ state.meetingActiveId=null; renderActiveTab(); }).catch(function(err){ showToast('삭제 실패: '+err.message); });
     }
     else if(action==='toggle-recur-done'){
       if(!requireFirebase()) return;
@@ -1074,6 +1277,12 @@
       var f = el.dataset.field;
       if(state.taskSortField===f){ state.taskSortDir = state.taskSortDir==='asc' ? 'desc' : 'asc'; }
       else { state.taskSortField = f; state.taskSortDir = 'asc'; }
+      renderActiveTab();
+    }
+    else if(action==='sort-comms'){
+      var cf = el.dataset.field;
+      if(state.commSortField===cf){ state.commSortDir = state.commSortDir==='asc' ? 'desc' : 'asc'; }
+      else { state.commSortField = cf; state.commSortDir = 'asc'; }
       renderActiveTab();
     }
     else if(action==='toggle-person'){
@@ -1097,10 +1306,7 @@
       state.activeTab = 'calendar';
       renderActiveTab();
     }
-    else if(action==='goto-board'){
-      state.activeTab = el.dataset.tab;
-      renderActiveTab();
-    }
+    else if(action==='goto-board'){ state.activeTab = el.dataset.tab; renderActiveTab(); }
     else if(action==='cal-prev'){
       var d1 = new Date(state.calMonth+'-01'); d1.setMonth(d1.getMonth()-1);
       state.calMonth = d1.getFullYear()+'-'+pad2(d1.getMonth()+1);
@@ -1123,7 +1329,7 @@
   mainEl.addEventListener('input', function(e){
     var t = e.target;
     if(!t.dataset.field || !t.dataset.collection) return;
-    if(t.tagName==='TEXTAREA') autoGrow(t);
+    if(t.tagName==='TEXTAREA' && t.classList.contains('doc-content-input')) autoGrow(t);
     if(t.tagName==='INPUT' && t.type==='checkbox') return; // change 이벤트에서 처리
     if(t.classList.contains('tag-input')){
       var c = hashColor(t.value);
@@ -1156,7 +1362,16 @@
     if(t.id==='filterStatus'){ state.taskFilterStatus = t.value; renderActiveTab(); return; }
     if(t.id==='calFilterSelect'){ state.calFilter = t.value; renderActiveTab(); return; }
     if(t.type==='file' && t.classList.contains('filelink-upload-input')){
-      if(t.files && t.files[0]) uploadFile(t.dataset.collection, t.dataset.id, t.files[0]);
+      if(t.files && t.files[0]){
+        if(t.dataset.single==='1') uploadSingleField(t.dataset.collection, t.dataset.id, t.files[0]);
+        else uploadFile(t.dataset.collection, t.dataset.id, t.files[0]);
+      }
+      return;
+    }
+    if(t.dataset.field==='category' && t.dataset.collection==='personal' && t.value==='__new__'){
+      var newCat = prompt('새 분류 이름을 입력하세요');
+      if(newCat && newCat.trim()){ flushSaveNow('personal', t.dataset.id, 'category', newCat.trim()); }
+      else { renderActiveTab(); }
       return;
     }
     if(!t.dataset.field || !t.dataset.collection) return;
@@ -1172,8 +1387,15 @@
     if(t.dataset.field==='direction' && DIRECTION_COLORS[val]){
       t.style.background = DIRECTION_COLORS[val].bg; t.style.color = DIRECTION_COLORS[val].fg;
     }
-    if(t.dataset.field==='category' && MANUAL_CAT_COLORS[val]){
+    if(t.dataset.field==='dept' && COMM_DEPT_COLORS[val]){
+      t.style.background = COMM_DEPT_COLORS[val].bg; t.style.color = COMM_DEPT_COLORS[val].fg;
+    }
+    if(t.dataset.field==='category' && t.dataset.collection==='manuals' && MANUAL_CAT_COLORS[val]){
       t.style.background = MANUAL_CAT_COLORS[val].bg; t.style.color = MANUAL_CAT_COLORS[val].fg;
+    }
+    if(t.dataset.field==='category' && t.dataset.collection==='personal' && val!=='__new__'){
+      var hc = hashColor(val);
+      t.style.background = hc.bg; t.style.color = hc.fg;
     }
   });
 

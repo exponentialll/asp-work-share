@@ -27,8 +27,8 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD 
 .tab-btn:hover{color:var(--text);}
 .tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);}
 
-/* 전체 레이아웃: 좌측 사이드바(미니캘린더·D-day·메모) + 우측 메인 콘텐츠 */
-.app-body{max-width:1640px;margin:0 auto;padding:18px 22px 60px;display:flex;align-items:flex-start;gap:20px;}
+/* 전체 레이아웃: 좌측 사이드바(미니캘린더·D-day·메모, 고정폭) + 우측 메인 콘텐츠(가변, 화면 꽉 채움) */
+.app-body{width:100%;margin:0;padding:18px 26px 60px;display:flex;align-items:flex-start;gap:22px;}
 .sidebar{width:230px;flex-shrink:0;position:sticky;top:16px;display:flex;flex-direction:column;gap:14px;}
 .app-main{flex:1;min-width:0;}
 main{padding:0;}
@@ -75,14 +75,16 @@ main{padding:0;}
 
 table{width:100%;border-collapse:collapse;font-size:13.5px;}
 th{text-align:left;color:var(--text-light);font-weight:600;font-size:12.5px;padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
-td{padding:11px 10px;border-bottom:1px solid #f0f0f2;vertical-align:top;}
+td{padding:11px 10px;border-bottom:1px solid #f0f0f2;vertical-align:middle;line-height:1.4;}
 tr:hover td{background:#fafbfd;}
 td input[type=text], td input[type=time], td input[type=date], td select, td textarea{
-  width:100%;border:1px solid transparent;background:transparent;padding:7px 8px;border-radius:6px;font-size:13.5px;font-family:inherit;color:var(--text);
+  width:100%;border:1px solid transparent;background:transparent;padding:7px 8px;border-radius:6px;font-size:13.5px;font-family:inherit;color:var(--text);box-sizing:border-box;
 }
 td input:hover, td select:hover, td textarea:hover{border-color:var(--border);}
 td input:focus, td select:focus, td textarea:focus{border-color:var(--primary);background:#fff;outline:none;}
-td textarea{resize:none;min-height:40px;overflow:hidden;}
+/* 표 안의 내용칸은 늘어나지 않고 높이가 고정돼요 — 글이 길면 칸 안에서만 스크롤되고,
+   덕분에 모든 행의 높이가 서로 비슷하게 맞춰집니다. */
+td textarea{resize:none;height:50px;overflow-y:auto;line-height:1.4;vertical-align:top;}
 
 /* 표가 좁아지면 잘리지 않고 가로 스크롤되도록 (칸이 눌려서 안 보이는 것 방지) */
 .table-scroll{overflow-x:auto;}
@@ -99,7 +101,7 @@ td textarea{resize:none;min-height:40px;overflow:hidden;}
 /* 업무 리스트 표 안의 셀 편집 요소들 */
 .cell-select-inline{width:auto;display:inline-block;font-size:12px;border:1px solid var(--border);border-radius:6px;padding:4px 8px;background:#fafbfd;margin-bottom:5px;}
 .cell-title-input{font-weight:700;font-size:14px;}
-.cell-textarea{font-size:13px;color:var(--text);min-height:42px;}
+.cell-textarea{font-size:13px;color:var(--text);}
 .cell-url-input{font-size:12.5px;}
 .cell-check-group{display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;align-items:center;}
 .cell-check-group label{display:flex;align-items:center;gap:4px;white-space:nowrap;}
@@ -110,7 +112,7 @@ td textarea{resize:none;min-height:40px;overflow:hidden;}
 .date-range{display:flex;align-items:center;gap:6px;white-space:nowrap;}
 .date-range input[type=date]{font-size:12.5px;padding:6px !important;}
 .date-arrow{color:var(--text-light);font-size:11px;flex-shrink:0;}
-.tag-input{border-radius:6px;font-weight:600;}
+.tag-input, .tag-select{border-radius:6px;font-weight:600;}
 
 /* 정렬 가능한 표 헤더 / 그룹 접기 */
 .sortable-th{cursor:pointer;user-select:none;}
@@ -132,12 +134,12 @@ td textarea{resize:none;min-height:40px;overflow:hidden;}
 .filelink-details summary::-webkit-details-marker{display:none;}
 .filelink-details[open] summary{margin-bottom:6px;}
 
-.manual-content{min-height:160px;}
+.manual-content{min-height:160px;max-height:480px;}
 .manual-file-count{font-size:11px;color:var(--text-light);}
 
 /* 대분류 탭 / 시트 탭 (업무 리스트, 각자 업무리스트) */
 .subtab-bar{display:flex;gap:7px;flex-wrap:wrap;margin:2px 0 14px;}
-.subtab-btn{border:1px solid var(--border);background:#fff;border-radius:999px;padding:7px 14px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--text-light);}
+.subtab-btn{border:1px solid var(--border);background:#fff;border-radius:999px;padding:7px 14px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--text-light);line-height:1.3;}
 .subtab-btn:hover{border-color:var(--primary);color:var(--primary);}
 .subtab-count{font-weight:400;opacity:.75;font-size:11px;}
 .sheet-tab-bar{display:flex;gap:4px;margin:2px 0 0;}
@@ -151,7 +153,9 @@ td textarea{resize:none;min-height:40px;overflow:hidden;}
 .board-row:hover td{background:#fafbfd;}
 .board-title-cell{font-weight:600;color:var(--text);}
 
-/* ASP 정기업무 현황 (체크리스트) */
+/* ASP 정기업무 현황 (업무 리스트 탭 안의 접이식 패널) */
+.recur-panel{border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:14px;background:#fafbfd;}
+.recur-panel-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-wrap:wrap;}
 .recur-progress{font-size:12.5px;color:var(--text-light);font-weight:600;}
 .recur-group{margin-bottom:16px;}
 .recur-group-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
@@ -185,7 +189,8 @@ td textarea{resize:none;min-height:40px;overflow:hidden;}
 .doc-title-input:focus{border-color:var(--primary);background:#fff;outline:none;}
 .doc-meta-row{display:flex;align-items:center;gap:14px;margin:6px 0;flex-wrap:wrap;}
 .doc-meta-row input[type=date]{border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;}
-.doc-content-input{width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;color:var(--text);resize:none;min-height:44px;overflow:hidden;margin-top:6px;line-height:1.6;}
+.meeting-time-input{border:1px solid var(--border);border-radius:6px;padding:4px 8px;font-size:12px;}
+.doc-content-input{width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;font-size:13px;font-family:inherit;color:var(--text);resize:none;min-height:44px;max-height:420px;overflow-y:auto;margin-top:6px;line-height:1.6;}
 .doc-content-input:focus{border-color:var(--primary);outline:none;}
 .note-meta{font-size:11px;color:var(--text-light);margin-top:2px;}
 .status-select-sm{font-size:11.5px;border:1px solid var(--border);border-radius:999px;padding:3px 8px;background:#fff;color:var(--text-light);flex-shrink:0;}
