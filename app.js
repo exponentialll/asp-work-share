@@ -1100,10 +1100,10 @@
       (showMajorCol ? '<th style="min-width:56px">분류</th>' : '')+
       '<th data-action="sort-tasks" data-field="minor" class="sortable-th" style="min-width:280px">업무 (소분류 · 업무명)'+sortArrow('minor')+'</th>'+
       '<th style="min-width:260px">내용</th>'+
-      '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:110px">날짜'+sortArrow('date')+'</th>'+
-      '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:90px">담당자'+sortArrow('assignees')+'</th>'+
+      '<th style="min-width:70px">비고</th>'+ /* 비고 열을 내용 오른쪽으로 이동 */
+      '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:180px">날짜'+sortArrow('date')+'</th>'+
+      '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:110px">담당자'+sortArrow('assignees')+'</th>'+
       '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:118px">진행도'+sortArrow('status')+'</th>'+
-      '<th style="min-width:70px">비고</th>'+
       '<th style="min-width:70px">첨부</th><th></th>'+
     '</tr>';
 
