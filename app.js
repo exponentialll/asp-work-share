@@ -1393,10 +1393,10 @@
       '<td><input type="date" data-collection="comms" data-id="'+c.id+'" data-field="date" value="'+escapeHtml(c.date||todayStr())+'"></td>'+
       '<td><select data-collection="comms" data-id="'+c.id+'" data-field="dept" style="background:'+dc.bg+';color:'+dc.fg+';">'+deptOpts+'</select></td>'+
       '<td><select data-collection="comms" data-id="'+c.id+'" data-field="workCategory">'+workOpts+'</select></td>'+
-      '<td><input type="text" class="comm-narrow-input" placeholder="상대방" data-collection="comms" data-id="'+c.id+'" data-field="target" value="'+escapeHtml(c.target||'')+'"></td>'+
-      '<td><textarea class="cell-textarea" data-collection="comms" data-id="'+c.id+'" data-field="content" rows="1" placeholder="소통 내용 / 협의사항">'+escapeHtml(c.content||'')+'</textarea></td>'+
+      '<td><input type="text" class="comm-narrow-input" placeholder="" data-collection="comms" data-id="'+c.id+'" data-field="target" value="'+escapeHtml(c.target||'')+'"></td>'+
+      '<td><textarea class="cell-textarea" data-collection="comms" data-id="'+c.id+'" data-field="content" rows="1" placeholder="">'+escapeHtml(c.content||'')+'</textarea></td>'+
       '<td><select data-collection="comms" data-id="'+c.id+'" data-field="direction" style="background:'+dirColor.bg+';color:'+dirColor.fg+';">'+dirOpts+'</select></td>'+
-      '<td><input type="text" class="comm-narrow-input" placeholder="내선" data-collection="comms" data-id="'+c.id+'" data-field="ext" value="'+escapeHtml(c.ext||'')+'"></td>'+
+      '<td><input type="text" class="comm-narrow-input" placeholder="" data-collection="comms" data-id="'+c.id+'" data-field="ext" value="'+escapeHtml(c.ext||'')+'"></td>'+
       '<td><div class="cell-check-group">'+peopleChecks+'</div></td>'+
       '<td><textarea class="cell-textarea" data-collection="comms" data-id="'+c.id+'" data-field="note" rows="1" placeholder="">'+escapeHtml(c.note||'')+'</textarea></td>'+
       '<td><details class="filelink-details"><summary>📎 '+(fileCount?fileCount+'개':'첨부')+'</summary>'+renderFileLinks('comms', c)+'</details></td>'+
