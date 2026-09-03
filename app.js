@@ -8,11 +8,8 @@
 
   var MAJOR_CATS = ['행정','교육','중재'];
   var MINOR_CATS = ['일간','주간','격주','월별','분기','반기','연간','필수','비정기'];
-  // 행정 업무는 대부분 정기 보고 성격이라, 소분류 선택지를 주기 흐름 순서(월별→분기→반기→연간→비정기)로 좁혀서 보여줘요.
   var ADMIN_MINOR_CATS = ['월별','분기','반기','연간','비정기'];
-  // 드롭다운에서 위에서부터 보이는 순서예요. 실제 정렬 우선순위는 STATUS_ORDER를 따로 씁니다.
   var STATUSES = ['진행 중','시작 전','완료'];
-  // 예전에는 "진행중"(공백 없이)으로 저장된 데이터도 있어서, 정렬 시 그 값도 똑같이 0으로 인식하게 별칭을 같이 넣었어요.
   var STATUS_ORDER = { '진행 중':0, '진행중':0, '시작 전':1, '완료':2 };
   var PEOPLE = ['지수','다경'];
   var COMM_WORK_CATS = ['처방검토','중재','TDM','상담/교육','회의','데이터/통계','서류/행정','인사','기타'];
@@ -75,7 +72,6 @@
     '시스템': { fg:'#d98a3d', bg:'#fdf1e4' },
     '기타':   { fg:'#9a9a9a', bg:'#f0f0f0' }
   };
-  // 업무매뉴얼 중 "행정" 분류는 문서가 많아지기 쉬워서, 월별/분기별/반기별/연간 주기로 한 번 더 나눠 볼 수 있어요.
   var MANUAL_CADENCE_COLORS = {
     '월별':   { fg:'#8f5fd6', bg:'#f2ecfb' },
     '분기별': { fg:'#d98a3d', bg:'#fdf1e4' },
@@ -90,8 +86,6 @@
     '가이드라인': { fg:'#d98a3d', bg:'#fdf1e4' },
     '기타':     { fg:'#9a9a9a', bg:'#f0f0f0' }
   };
-  // 소분류(일간/주간/.../반기/연간 등)를 한눈에 구분할 수 있도록 색을 지정합니다. 반기·연간처럼
-  // 자주 놓치기 쉬운 주기는 진한 색으로 눈에 띄게 했어요.
   var MINOR_CAT_COLORS = {
     '일간':  { fg:'#8a8d98', bg:'#eef0f4' },
     '주간':  { fg:'#3b7dd8', bg:'#e8f0fd' },
@@ -103,8 +97,6 @@
     '필수':  { fg:'#b8860b', bg:'#fdf3d6' },
     '비정기':{ fg:'#9a9a9a', bg:'#f0f0f0' }
   };
-  // 개별 업무리스트 분류는 자동 해시 색상(hashColor)을 쓰면 서로 비슷한 색이 우연히 겹칠 수 있어서,
-  // 다른 분류들처럼 눈에 띄게 구분되는 고정 색상을 지정했어요. 목록에 없는 분류(직접 추가한 것)만 hashColor로 보완합니다.
   var PERSONAL_CAT_COLORS = {
     '회의':   { fg:'#3b7dd8', bg:'#e8f0fd' },
     '교육':   { fg:'#7d7d7d', bg:'#efefef' },
@@ -124,7 +116,7 @@
     '공지사항':'announcements', '업무 리스트':'tasks', '개별 업무리스트':'personal',
     '회의':'meetings', '아이디어':'ideas', '소통일지':'comms', '자료실':'files'
   };
-  // 자유 입력 텍스트에 고정 색상 팔레트가 없을 때, 글자 기반으로 일관된 파스텔 색을 만들어줍니다.
+
   function hashColor(str){
     str = str || '';
     var hash = 0;
@@ -133,7 +125,6 @@
     return { fg:'hsl('+hue+',55%,38%)', bg:'hsl('+hue+',70%,94%)' };
   }
 
-  /* ---------------- Utilities ---------------- */
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
   function escapeHtml(str){
     if(str===undefined || str===null) return '';
@@ -143,16 +134,9 @@
   }
   function pad2(n){ return n<10 ? '0'+n : ''+n; }
   function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
-  // 표 안 날짜 칸이 너무 넓어 보여서, 화면엔 "26-09-14"처럼 연도 앞 두 자리를 뺀 짧은 표기로 보여줘요.
-  // 실제 저장되는 값은 그대로 "2026-09-14" 전체 형식이라 정렬/계산에는 영향이 없어요.
   function shortDate(d){
     return (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) ? d.slice(2) : (d||'');
   }
-  // 네이티브 <input type="date">는 폭을 줄여도 브라우저가 연도까지 표시할 자리를 그대로 차지해서
-  // 표 칸을 좁히는 데 한계가 있어요. 그래서 화면엔 짧은 날짜 글자가 적힌 작은 버튼만 보여주고,
-  // 버튼을 누르면 화면 밖에 숨겨둔 진짜 날짜 입력칸의 달력을 열어서(showPicker) 고르게 했어요.
-  // 저장은 그 숨은 input이 기존과 똑같은 data-collection/data-id/data-field를 그대로 갖고 있어서
-  // 자동으로 처리됩니다.
   function renderCompactDateField(col, id, field, value, placeholder){
     var domId = 'datefield-'+col+'-'+id+'-'+field;
     var label = value ? shortDate(value) : (placeholder || '+ 날짜');
@@ -180,9 +164,6 @@
     clearTimeout(toastTimer);
     toastTimer=setTimeout(function(){ t.classList.remove('show'); }, 2200);
   }
-  // 문서형 내용칸(doc-content-input, 공지사항/회의/아이디어/업무매뉴얼 상세)만 내용에 맞춰 늘어나고,
-  // CSS max-height에 닿으면 그 이상은 늘어나지 않고 안에서 스크롤됩니다.
-  // 표 안의 칸(cell-textarea 등)은 늘어나지 않도록 별도로 두어(고정 높이) 행 높이가 서로 비슷하게 유지돼요.
   function autoGrow(el){
     el.style.height='auto';
     var max = parseFloat(window.getComputedStyle(el).maxHeight);
@@ -190,8 +171,6 @@
     el.style.height = (max && sh>max ? max : sh)+'px';
   }
   function autoGrowAll(){ document.querySelectorAll('textarea.doc-content-input').forEach(autoGrow); }
-  // 표 안 칸(cell-textarea 등)은 평소엔 고정된 낮은 높이를 유지해 행 높이가 서로 비슷하지만,
-  // 포커스를 받거나 타이핑 중일 때만 최대 180px까지 늘어나고, 포커스를 벗어나면 다시 원래 높이로 접힙니다.
   function autoGrowCell(el){
     el.style.height='auto';
     var sh = el.scrollHeight;
@@ -200,8 +179,6 @@
   }
   var WEEKDAY_KOR = ['일','월','화','수','목','금','토'];
 
-  // ASP 정기업무의 "현재 기간"을 계산합니다. 기간이 바뀌면(예: 다음날/다음주) key가 자동으로
-  // 바뀌기 때문에, 완료 표시(lastDonePeriod)가 이전 key와 다르면 자연스럽게 "대기"로 리셋됩니다.
   function periodInfo(cadence){
     var now = new Date();
     var y = now.getFullYear(), m = now.getMonth()+1, d = now.getDate();
@@ -209,7 +186,7 @@
       return { key: todayStr(), label: y+'년 '+m+'월 '+d+'일 ('+WEEKDAY_KOR[now.getDay()]+')' };
     }
     if(cadence==='주간'){
-      var dow = (now.getDay()+6)%7; // 월요일=0
+      var dow = (now.getDay()+6)%7;
       var mon = new Date(now.getFullYear(), now.getMonth(), now.getDate()-dow);
       var sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate()+6);
       var jan1 = new Date(mon.getFullYear(),0,1);
@@ -231,10 +208,9 @@
       var hMonths = h===1 ? [1,6] : [7,12];
       return { key: y+'-H'+h, label: y+'년 '+(h===1?'상반기':'하반기')+' ('+hMonths[0]+'~'+hMonths[1]+'월)' };
     }
-    return { key: ''+y, label: y+'년' }; // 연간
+    return { key: ''+y, label: y+'년' };
   }
 
-  /* ---------------- Firebase ---------------- */
   var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false, weeklyMeetingChecked=false, notionImportChecked=false, notionCommsImportChecked=false, notionPersonalImportChecked=false;
   function setSyncStatus(on, label){
     document.getElementById('syncDot').classList.toggle('on', on);
@@ -261,7 +237,6 @@
     }
   }
 
-  /* ---------------- 로그인 (Firebase Authentication) ---------------- */
   function handleAuthStateChanged(user){
     if(user){
       document.getElementById('authGate').classList.add('hidden');
@@ -299,8 +274,6 @@
 
   var COLLECTIONS = ['tasks','announcements','personal','meetings','ideas','comms','manuals','files','dday','pins','recurring'];
   var STATE_KEY = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'dday', pins:'pins', recurring:'recurring' };
-  // 캘린더 탭은 모든 컬렉션의 날짜를 모아 보여주므로, dday를 포함한 모든 컬렉션 변경이 캘린더도 함께 갱신시켜야 합니다.
-  // pins는 사이드바 전용, recurring은 업무 리스트 탭 안의 패널에서 쓰이므로 tasks에 매핑합니다.
   var TAB_FOR_COLLECTION = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar', pins:null, recurring:'tasks' };
 
   function attachListeners(){
@@ -317,8 +290,6 @@
     });
   }
 
-  // "개인 공부" 분류를 없앴는데 예전에 그 분류로 저장된 매뉴얼이 있으면 분류 탭 어디에도 안 걸려서
-  // 화면에서 안 보이게 될 수 있어요. 그런 문서가 있으면 "기타"로 자동 이동시켜 계속 보이게 합니다.
   function migrateRemovedManualCategory(){
     if(!db) return;
     state.manuals.forEach(function(m){
@@ -327,8 +298,6 @@
       }
     });
   }
-  // 예전에 "진행중"(공백 없이)으로 저장된 업무/개별업무 기록은 뱃지 색은 맞게 보였지만 정렬 기준(STATUS_ORDER)에서는
-  // 매칭이 안 돼서 맨 뒤로 밀리는 문제가 있었어요. 발견되면 공백이 들어간 "진행 중"으로 자동 정리합니다.
   function migrateLegacyStatusLabel(col, list){
     if(!db) return;
     list.forEach(function(item){
@@ -337,8 +306,6 @@
       }
     });
   }
-  // "중재(Intervention)" 업무분류 이름을 "중재"로 짧게 바꿨는데, 이미 그 이름으로 저장된 소통일지 기록이
-  // 있으면 목록 어디에도 안 걸려서 드롭다운이 이상하게 보일 수 있어요. 자동으로 새 이름으로 옮겨줍니다.
   function migrateCommsWorkCategoryLabel(){
     if(!db) return;
     state.comms.forEach(function(c){
@@ -348,8 +315,6 @@
     });
   }
 
-  // 매주 금요일 오후 4시 "주간회의"가 없으면 자동으로 만들어줍니다. 문서 ID를 날짜 기반으로 고정해서
-  // 두 사람이 동시에 접속해도 중복 생성되지 않아요.
   function ensureWeeklyMeeting(){
     if(!db || weeklyMeetingChecked) return;
     weeklyMeetingChecked = true;
@@ -369,9 +334,6 @@
     }).catch(function(err){ console.error(err); });
   }
 
-  // 지수님이 보내주신 노션 "ASP 업무 리스트" 캡처 화면에서 항목을 추출해 한 번만 업무 리스트에 옮겨 담습니다.
-  // meta/notion-import-2026-09 마커 문서로 이미 가져왔는지 확인하기 때문에, 앱을 여러 번 열거나
-  // 지수·다경 두 분이 동시에 접속해도 중복 생성되지 않아요.
   function ensureNotionImport(){
     if(!db || notionImportChecked) return;
     notionImportChecked = true;
@@ -404,7 +366,6 @@
     }).catch(function(err){ console.error(err); });
   }
 
-  // 지수님이 보내주신 노션 "소통일지" 캡처 화면에서 항목을 추출해 한 번만 소통일지에 옮겨 담습니다.
   function ensureNotionCommsImport(){
     if(!db || notionCommsImportChecked) return;
     notionCommsImportChecked = true;
@@ -442,7 +403,6 @@
     }).catch(function(err){ console.error(err); });
   }
 
-  // 지수님이 보내주신 노션 "지수 개별 업무리스트" 캡처 화면에서 항목을 추출해 한 번만 개별 업무리스트에 옮겨 담습니다.
   function ensureNotionPersonalImport(){
     if(!db || notionPersonalImportChecked) return;
     notionPersonalImportChecked = true;
@@ -472,9 +432,6 @@
     }).catch(function(err){ console.error(err); });
   }
 
-  // 사용자가 지금 어떤 입력칸에 타이핑 중이면, 서버에서 새 데이터가 와도 화면을 다시 그리지 않고
-  // (커서 위치가 날아가는 것을 방지) 입력을 끝내면(focusout) 그때 반영합니다.
-  // 사이드바도 appShell 안에 있으므로 같은 기준으로 편집 여부를 판단합니다.
   var pendingRerender = false;
   function isCurrentlyEditing(){
     var active = document.activeElement;
@@ -496,7 +453,6 @@
     return true;
   }
 
-  /* ---------------- Save helpers (Notion식 즉시 저장) ---------------- */
   var saveTimers = {};
   function scheduleSave(col, id, field, value){
     var key = col+'|'+id+'|'+field;
@@ -523,7 +479,6 @@
     db.collection(col).doc(id).delete().catch(function(err){ showToast('삭제 실패: '+err.message); });
   }
 
-  /* ---------------- 중첩 배열 필드 (파일 링크 목록) 저장 헬퍼 ---------------- */
   function getNestedArray(col, docId, arrField){
     var doc = (state[col]||[]).find(function(x){ return x.id===docId; });
     return doc ? (doc[arrField]||[]).slice() : [];
@@ -553,7 +508,6 @@
     var arr = getNestedArray(col, docId, 'files').filter(function(x){ return x.id!==itemId; });
     saveNestedArray(col, docId, 'files', arr);
   }
-  // 실제 파일을 Firebase Storage에 업로드합니다 (Blaze 요금제 + Storage 활성화가 되어 있어야 동작해요).
   function uploadFile(col, docId, file){
     if(!requireFirebase()) return;
     if(!storage){ showToast('파일 업로드를 쓰려면 Firebase Storage 설정이 필요해요 (README 6단계 참고)'); return; }
@@ -570,7 +524,6 @@
       showToast('업로드 실패: '+(err && err.message ? err.message : 'Storage 설정을 확인하세요'));
     });
   }
-  // 자료실처럼 문서 하나에 파일이 1개만 붙는 경우 (url 필드에 바로 저장)
   function uploadSingleField(col, docId, file){
     if(!requireFirebase()) return;
     if(!storage){ showToast('파일 업로드를 쓰려면 Firebase Storage 설정이 필요해요 (README 6단계 참고)'); return; }
@@ -588,7 +541,6 @@
       showToast('업로드 실패: '+(err && err.message ? err.message : 'Storage 설정을 확인하세요'));
     });
   }
-  // PDF/이미지 파일은 새 탭을 열지 않아도 그 자리에서 바로 미리 볼 수 있게 확장자를 확인합니다.
   function previewKind(name){
     var m = /\.([a-z0-9]+)$/i.exec(name||'');
     var ext = m ? m[1].toLowerCase() : '';
@@ -600,16 +552,11 @@
     var files = doc.files || [];
     var rows = files.map(function(f){
       var label = f.name || f.url || '(이름 없음)';
-      // 이름 부분 전체를 클릭 가능한 링크로 만들어서, 굳이 별도의 "열기" 글자를 누르지 않아도
-      // 파일명을 클릭하면 바로 새 탭에서 파일이 열리도록(다운로드/미리보기) 했어요.
       var nameEl = f.url ?
         '<a class="filelink-chip-name" href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener">'+escapeHtml(label)+'</a>' :
         '<span class="filelink-chip-name">'+escapeHtml(label)+'</span>';
       var kind = f.url ? previewKind(label) : null;
       var isOpen = !!state.filePreviewOpen[f.id];
-      // PDF는 브라우저 내장 뷰어를 그대로 끼워넣으면 위아래/양옆으로 까만 여백이 생겨서 보기 안 좋았어요.
-      // 그래서 PDF는 임베드 대신 작은 "PDF" 표시만 붙이고, 파일명을 누르면 새 탭에서 잘리지 않고 온전히 보여요.
-      // 이미지는 그 자리에서 바로 볼 수 있게 미리보기를 그대로 유지합니다.
       var typeBadge = kind==='pdf' ? '<span class="filelink-type-badge">PDF</span>' : '';
       var previewBtn = kind==='image' ? '<button class="icon-btn" data-action="toggle-file-preview" data-collection="'+col+'" data-id="'+doc.id+'" data-item="'+f.id+'" data-url="'+escapeHtml(f.url)+'" data-kind="'+kind+'" title="바로 보기">'+(isOpen?'🔽':'👁')+'</button>' : '';
       var previewPanel = (kind==='image' && isOpen) ?
@@ -633,7 +580,6 @@
     '</div>';
   }
 
-  /* ---------------- 비고 / 진행 상황 기록 (수정·삭제 가능) ---------------- */
   function addComment(col, docId, text){
     if(!requireFirebase() || !requireWho()) return;
     text = (text||'').trim();
@@ -681,7 +627,6 @@
     '</div>';
   }
 
-  /* ---------------- 각자 업무리스트: 분류 옵션 (기본 + 직접 추가한 것들) ---------------- */
   function personalCategoryOptions(current){
     var used = uniqNonEmpty(state.personal.map(function(p){ return p.category; }));
     var all = PERSONAL_BASE_CATS.slice();
@@ -690,7 +635,6 @@
     return all;
   }
 
-  /* ---------------- State ---------------- */
   var state = {
     activeTab:'announcements',
     who: localStorage.getItem('asp_share_who') || '',
@@ -730,7 +674,6 @@
     localStorage.setItem('asp_share_who', state.who);
   });
 
-  /* ---------------- Tabs ---------------- */
   document.querySelectorAll('.tab-btn').forEach(function(btn){
     btn.addEventListener('click', function(){
       state.activeTab = btn.dataset.tab;
@@ -756,7 +699,6 @@
     renderSidebar();
   }
 
-  /* ================= 사이드바 (미니 캘린더 · D-day · 메모) ================= */
   function renderSidebar(){
     var el = document.getElementById('sidebarPanel');
     if(!el) return;
@@ -833,7 +775,6 @@
     '</div>';
   }
 
-  /* ================= 📢 공지사항 (게시판: 목록 → 클릭 → 상세) ================= */
   function renderAnnouncementsTab(){
     if(state.announcementActiveId){
       var a = state.announcements.find(function(x){ return x.id===state.announcementActiveId; });
@@ -873,7 +814,6 @@
     return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());
   }
 
-  /* ================= 📅 캘린더 (모든 게시판 날짜 통합) ================= */
   function classifyTask(t){
     var as = t.assignees || [];
     if(as.length===1) return { type:'개인', owner:as[0] };
@@ -990,7 +930,6 @@
     return rows || '<div class="empty-state">등록된 중요 일정이 없습니다.</div>';
   }
 
-  /* ================= ✅ ASP 정기업무 현황 (업무 리스트 탭 안의 패널) ================= */
   function renderRecurringContent(){
     var doneCount = 0;
     var groups = CADENCES.map(function(cad){
@@ -999,7 +938,6 @@
         .sort(function(a,b){ return (a.clientTs||0)-(b.clientTs||0); });
       var cc = CADENCE_COLORS[cad] || {fg:'#888',bg:'#eee'};
       var rows = items.map(function(r){
-        // 예전 데이터(lastDonePeriod만 있고 status가 없는 경우)도 자연스럽게 "완료"로 보이도록 이어받아요.
         var legacyDone = r.lastDonePeriod===pi.key;
         var hasCurStatus = r.statusPeriod===pi.key;
         var curStatus = hasCurStatus ? (r.status||'시작 전') : (legacyDone ? '완료' : '시작 전');
@@ -1027,8 +965,6 @@
       groups;
   }
 
-  /* ================= 📋 업무 리스트 (대분류별 탭 + 전체 보기) ================= */
-  // 소분류 정렬 순서: 행정 업무는 월별→분기→반기→연간→비정기 순으로, 그 외는 일반 소분류 순서로 비교해요.
   function minorSortIndex(t){
     var order = (t.major||MAJOR_CATS[0])==='행정' ? ADMIN_MINOR_CATS : MINOR_CATS;
     var idx = order.indexOf(t.minor||'');
@@ -1045,8 +981,6 @@
     var field = state.taskSortField;
     var sorted;
     if(!field){
-      // 기본 정렬은 진행도(진행 중 → 시작 전 → 완료)가 최우선이에요.
-      // "행정" 탭에서는 같은 진행도 안에서 월별→분기→반기→연간→비정기 순으로 한 번 더 나눠 보여줘요.
       var isAdminTab = state.taskActiveMajor==='행정';
       sorted = items.slice().sort(function(a,b){
         var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
@@ -1066,8 +1000,6 @@
         return 0;
       });
     }
-    // 별표(중요) 표시한 업무는 정렬 기준과 상관없이 항상 맨 위로 올라와요.
-    // Array.sort는 안정 정렬이라 이 두 번째 정렬로도 위에서 정한 순서는 그대로 유지됩니다.
     return sorted.sort(function(a,b){ return (b.important?1:0) - (a.important?1:0); });
   }
   function sortArrow(field){
@@ -1136,7 +1068,7 @@
     '</div>';
   }
 
-function renderTaskRow(t, showMajorCol){
+  function renderTaskRow(t, showMajorCol){
     var curMinor = t.minor || '';
     var minorSource = (t.major||MAJOR_CATS[0])==='행정' ? ADMIN_MINOR_CATS : MINOR_CATS;
     var minorOptionsList = minorSource.slice();
@@ -1161,7 +1093,7 @@ function renderTaskRow(t, showMajorCol){
     var fileCount = (t.files||[]).length;
     var starBtn = '<button type="button" class="icon-btn star-btn'+(t.important?' active':'')+'" data-action="toggle-task-important" data-id="'+t.id+'" title="'+(t.important?'중요 표시 해제':'중요 표시(항상 위로)')+'">'+(t.important?'★':'☆')+'</button>';
 
-return '<tr data-id="'+t.id+'">'+
+    return '<tr data-id="'+t.id+'">'+
       (showMajorCol ? '<td>'+badge(t.major||'미분류', CAT_COLORS)+'</td>' : '')+
       '<td><div class="task-title-cell">'+
         '<select class="status-select minor-select" data-collection="tasks" data-id="'+t.id+'" data-field="minor" style="background:'+mnc.bg+';color:'+mnc.fg+';">'+minorOpts+'</select>'+
@@ -1171,14 +1103,13 @@ return '<tr data-id="'+t.id+'">'+
       '<td><details class="filelink-details"><summary>📝'+((t.comments||[]).length?' '+t.comments.length:'')+'</summary>'+renderComments('tasks', t)+'</details></td>'+
       '<td><div class="date-range">'+dateHtml+'</div></td>'+
       '<td><select class="status-select-sm assignee-select-sm" data-collection="tasks" data-id="'+t.id+'" data-field="assigneesSelect">'+assigneeOpts+'</select></td>'+
-      '<td><select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+ /* 진행도 단독 */
+      '<td><select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
       '<td><details class="filelink-details"><summary>📎'+(fileCount?' '+fileCount:'')+'</summary>'+renderFileLinks('tasks', t)+'</details></td>'+
-      '<td>'+starBtn+'</td>'+ /* 첨부 오른쪽으로 별 이동 */
+      '<td>'+starBtn+'</td>'+
       '<td><button class="icon-btn danger" data-action="del-row" data-collection="tasks" data-id="'+t.id+'" title="삭제">✕</button></td>'+
     '</tr>';
   }
 
-  /* ================= 🙋 각자 업무리스트 (엑셀 시트 방식) ================= */
   function renderPersonalTab(){
     var owner = state.personalActiveOwner || PEOPLE[0];
     var catOrder = personalCategoryOptions(null);
@@ -1210,8 +1141,6 @@ return '<tr data-id="'+t.id+'">'+
       var cnt = state.personal.filter(function(x){ return x.owner===p; }).length;
       return '<button class="subtab-btn sheet-tab" data-action="personal-set-owner" data-owner="'+p+'" style="'+style+'">'+p+' <span class="subtab-count">'+cnt+'</span></button>';
     }).join('');
-    // 분류 색깔만으로는 비슷한 색이 나올 수 있어 구분이 잘 안 될 때가 있어서, "분류"나 "진행도" 열
-    // 제목을 누르면 그 기준으로 모아서/순서대로 볼 수 있게 정렬 토글을 붙였어요.
     function personalSortArrow(field){
       if(state.personalSortField!==field) return '';
       return state.personalSortDir==='asc' ? ' ▲' : ' ▼';
@@ -1243,7 +1172,6 @@ return '<tr data-id="'+t.id+'">'+
     var sc = STATUS_COLORS[curStatus] || {fg:'#888',bg:'#eee'};
     var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
     var showDeadline = !!p.deadline || !!state.personalDeadlineOpen[p.id];
-    // 업무리스트 날짜 칸과 똑같이 시작일 → 마감일을 화살표 하나로 이어서 한 칸에 컴팩트하게 보여줘요.
     var dateHtml = renderCompactDateField('personal', p.id, 'startDate', p.startDate, '+ 날짜')+
       (showDeadline ?
         '<span class="date-arrow">→</span>'+renderCompactDateField('personal', p.id, 'deadline', p.deadline, '마감일')
@@ -1262,7 +1190,6 @@ return '<tr data-id="'+t.id+'">'+
     '</tr>';
   }
 
-  /* ================= 🗓 회의 (유형 탭 + 게시판) ================= */
   function renderMeetingsTab(){
     if(state.meetingActiveId){
       var m = state.meetings.find(function(x){ return x.id===state.meetingActiveId; });
@@ -1316,7 +1243,6 @@ return '<tr data-id="'+t.id+'">'+
     '</div>';
   }
 
-  /* ================= 💡 아이디어 ================= */
   function renderIdeasTab(){
     var items = state.ideas.slice().sort(function(a,b){ return (b.clientTs||0)-(a.clientTs||0); });
     var listHtml = items.length ? items.map(renderIdeaCard).join('') : '<div class="empty-state">등록된 아이디어가 없습니다.</div>';
@@ -1339,7 +1265,6 @@ return '<tr data-id="'+t.id+'">'+
     '</div>';
   }
 
-  /* ================= 💬 소통일지 (분류 드롭다운 + 정렬) ================= */
   function commSortValue(c, field){
     if(field==='dept') return c.dept || '';
     if(field==='workCategory') return COMM_WORK_CATS.indexOf(c.workCategory);
@@ -1374,8 +1299,8 @@ return '<tr data-id="'+t.id+'">'+
       '<div class="table-scroll"><table><thead><tr>'+
       '<th style="min-width:130px">날짜</th>'+
       '<th data-action="sort-comms" data-field="dept" class="sortable-th" style="min-width:100px">분류'+commSortArrow('dept')+'</th>'+
-'<th data-action="sort-comms" data-field="workCategory" class="sortable-th" style="min-width:95px">업무'+commSortArrow('workCategory')+'</th>'+
-'<th style="min-width:115px">대상</th>'<th style="min-width:300px">소통내역</th><th style="min-width:80px">수신/발신</th>'+
+      '<th data-action="sort-comms" data-field="workCategory" class="sortable-th" style="min-width:95px">업무'+commSortArrow('workCategory')+'</th>'+
+      '<th style="min-width:115px">대상</th><th style="min-width:300px">소통내역</th><th style="min-width:80px">수신/발신</th>'+
       '<th style="min-width:56px">전화번호</th><th style="min-width:100px">사람</th><th style="min-width:150px">비고</th><th>첨부</th><th></th></tr></thead>'+
       '<tbody>'+(rows||'')+'</tbody></table></div>'+
       (rows ? '' : '<div class="empty-state">등록된 소통 기록이 없습니다.</div>')+
@@ -1407,7 +1332,6 @@ return '<tr data-id="'+t.id+'">'+
     '</tr>';
   }
 
-  /* ================= 📔 업무매뉴얼 (분류 탭 + 게시판) ================= */
   function renderManualsTab(){
     if(state.manualActiveId){
       var m = state.manuals.find(function(x){ return x.id===state.manualActiveId; });
@@ -1488,7 +1412,6 @@ return '<tr data-id="'+t.id+'">'+
     '</div>';
   }
 
-  /* ================= 🗂 자료실 (분류 탭 + 게시판 형식, 실제 파일 업로드) ================= */
   function renderFilesTab(){
     if(state.fileActiveId){
       var f0 = state.files.find(function(x){ return x.id===state.fileActiveId; });
@@ -1546,10 +1469,6 @@ return '<tr data-id="'+t.id+'">'+
     '</div>';
   }
 
-  /* ---------------- 표 안 첨부파일/비고 팝업 위치 계산 (뷰포트 기준 고정) ----------------
-     .table-scroll처럼 overflow:auto인 조상 안에 있으면 position:absolute는 스크롤 영역에 잘려서
-     이상하게 스크롤되는 문제가 있었어요. 그래서 position:fixed로 띄우고, 여기서 summary 버튼의
-     실제 화면 좌표를 계산해 top/left를 직접 지정합니다(화면 밖으로 나가지 않도록 보정 포함). */
   function positionFloatingPanel(detailsEl){
     var panel = detailsEl.querySelector('.filelinks, .comments-box');
     var summary = detailsEl.querySelector('summary');
@@ -1563,7 +1482,6 @@ return '<tr data-id="'+t.id+'">'+
     if(left > maxLeft) left = Math.max(8, maxLeft);
     var top = rect.bottom + 4;
     if(top + panelHeight > window.innerHeight - 8){
-      // 아래쪽 공간이 부족하면 버튼 위쪽에 띄웁니다.
       top = rect.top - panelHeight - 4;
       if(top < 8) top = 8;
     }
@@ -1573,8 +1491,6 @@ return '<tr data-id="'+t.id+'">'+
   function repositionAllOpenPanels(){
     document.querySelectorAll('.filelink-details[open]').forEach(positionFloatingPanel);
   }
-  // <details>의 toggle 이벤트는 버블링되지 않지만, 캡처 단계에서는 조상 리스너까지 전달되므로
-  // capture:true로 등록해서 어떤 첨부파일/비고 팝업이 열리든 한 곳에서 처리합니다.
   document.addEventListener('toggle', function(e){
     var d = e.target;
     if(!d || d.tagName!=='DETAILS' || !d.classList.contains('filelink-details')) return;
@@ -1583,7 +1499,6 @@ return '<tr data-id="'+t.id+'">'+
   window.addEventListener('scroll', repositionAllOpenPanels, true);
   window.addEventListener('resize', repositionAllOpenPanels);
 
-  /* ---------------- Event Delegation (appShell 전체 — 사이드바 포함) ---------------- */
   var mainEl = document.getElementById('appShell');
 
   mainEl.addEventListener('click', function(e){
@@ -1637,8 +1552,6 @@ return '<tr data-id="'+t.id+'">'+
     else if(action==='del-row') delRow(col, id);
     else if(action==='del-filelink') delFileLink(col, id, el.dataset.item);
     else if(action==='toggle-file-preview'){
-      // 전체 화면을 다시 그리면 열려 있던 첨부파일/비고 팝업(details)이 도로 닫혀버리기 때문에,
-      // 여기서는 미리보기 요소만 가볍게 추가/삭제합니다.
       var pid = el.dataset.item;
       var willOpen = !state.filePreviewOpen[pid];
       state.filePreviewOpen[pid] = willOpen;
@@ -1647,7 +1560,6 @@ return '<tr data-id="'+t.id+'">'+
         var existing = wrap.querySelector('.filelink-preview, .filelink-preview-img');
         if(existing) existing.remove();
         if(willOpen){
-          // 이 토글 버튼은 이제 이미지 파일에만 붙어요 (PDF는 새 탭에서 온전히 보는 쪽이 더 나아서 PDF 배지로 대체했어요).
           var panel = document.createElement('img');
           panel.className = 'filelink-preview-img';
           panel.alt = '';
@@ -1790,13 +1702,12 @@ return '<tr data-id="'+t.id+'">'+
     }
   });
 
-  // 텍스트 입력: 타이핑 중엔 디바운스 저장 (+ textarea 자동 높이 + 태그 색상 미리보기)
   mainEl.addEventListener('input', function(e){
     var t = e.target;
     if(!t.dataset.field || !t.dataset.collection) return;
     if(t.tagName==='TEXTAREA' && t.classList.contains('doc-content-input')) autoGrow(t);
     else if(t.tagName==='TEXTAREA') autoGrowCell(t);
-    if(t.tagName==='INPUT' && t.type==='checkbox') return; // change 이벤트에서 처리
+    if(t.tagName==='INPUT' && t.type==='checkbox') return;
     if(t.classList.contains('tag-input')){
       var c = hashColor(t.value);
       t.style.background = c.bg; t.style.color = c.fg;
@@ -1808,17 +1719,13 @@ return '<tr data-id="'+t.id+'">'+
     scheduleSave(t.dataset.collection, t.dataset.id, t.dataset.field, t.value);
   });
 
-  // 표 안 칸(textarea)에 포커스가 들어오면 타이핑하기 편하도록 최대 180px까지 펼쳐줍니다.
   mainEl.addEventListener('focusin', function(e){
     var t = e.target;
     if(t.tagName==='TEXTAREA' && !t.classList.contains('doc-content-input')) autoGrowCell(t);
   });
 
-  // 포커스가 빠져나가면 즉시 저장 확정 + 밀린 재렌더링 반영
   mainEl.addEventListener('focusout', function(e){
     var t = e.target;
-    // 체크박스는 change 이벤트에서 이미 t.checked(불리언)로 저장했으므로 여기서는 건드리지 않아요.
-    // (여기서 t.value를 쓰면 체크박스의 value는 항상 문자열 "on"이라 방금 저장한 "해제(false)"를 덮어써버리는 버그가 있었어요.)
     if(t.dataset.field && t.dataset.collection && t.tagName!=='SELECT' && !(t.tagName==='INPUT' && t.type==='checkbox')){
       if(t.dataset.nested==='files'){
         flushSaveNestedNow(t.dataset.collection, t.dataset.id, 'files', t.dataset.item, t.dataset.field, t.value);
@@ -1826,12 +1733,10 @@ return '<tr data-id="'+t.id+'">'+
         flushSaveNow(t.dataset.collection, t.dataset.id, t.dataset.field, t.value);
       }
     }
-    // 표 안 칸(textarea)은 포커스를 벗어나면 다시 고정된 낮은 높이로 접어 행 높이를 맞춥니다.
     if(t.tagName==='TEXTAREA' && !t.classList.contains('doc-content-input')) t.style.height='';
     if(pendingRerender){ pendingRerender=false; renderActiveTab(); }
   });
 
-  // select / date / checkbox / 파일 업로드 등 값이 바뀌는 즉시 저장
   mainEl.addEventListener('change', function(e){
     var t = e.target;
     if(t.id==='filterPerson'){ state.taskFilterPerson = t.value; renderActiveTab(); return; }
@@ -1858,14 +1763,11 @@ return '<tr data-id="'+t.id+'">'+
       else { renderActiveTab(); }
       return;
     }
-    // 담당자 드롭다운(지수/다경/지수·다경)은 실제로는 tasks.assignees 배열 필드로 저장돼요.
     if(t.dataset.field==='assigneesSelect'){
       var arr = t.value==='both' ? PEOPLE.slice() : (t.value ? [t.value] : []);
       flushSaveNow(t.dataset.collection, t.dataset.id, 'assignees', arr);
       return;
     }
-    // 정기업무 진행도: 어느 "기간"에 대한 상태인지(statusPeriod)도 같이 저장해서, 기간이 바뀌면
-    // (다음달/다음분기 등) 예전 상태가 자동으로 "시작 전"으로 보이도록(=자동 리셋) 해요.
     if(t.dataset.field==='recurStatus'){
       if(!db) return;
       var period = t.dataset.period, newStatus = t.value;
@@ -1905,7 +1807,6 @@ return '<tr data-id="'+t.id+'">'+
     }
   });
 
-  // Enter로 바로 등록: 업무 리스트 비고, 사이드바 메모
   mainEl.addEventListener('keydown', function(e){
     if(e.key==='Enter' && e.target.classList.contains('comment-input')){
       e.preventDefault();
@@ -1918,7 +1819,6 @@ return '<tr data-id="'+t.id+'">'+
     }
   });
 
-  /* ---------------- Init ---------------- */
   renderActiveTab();
   initFirebase();
 })();
