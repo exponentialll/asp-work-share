@@ -140,26 +140,31 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
    맞춘 폭으로 넉넉히 잡았습니다. */
 .status-select.minor-select{width:80px !important;min-width:0 !important;flex-shrink:0;padding:5px 16px 5px 6px !important;font-size:11.5px;white-space:nowrap;}
 .task-title-cell .cell-title-input{flex:1;min-width:0;}
-.date-range{display:flex;align-items:center;gap:6px;white-space:nowrap;}
-.date-range input[type=date]{font-size:12.5px;padding:6px !important;}
-.date-arrow{color:var(--text-light);font-size:11px;flex-shrink:0;}
-/* 네이티브 date input은 연도 4자리까지 표시할 자리를 항상 차지해서 칸을 더 줄일 수 없었어요.
-   그래서 짧은 날짜 글자("26-09-14")가 적힌 작은 버튼만 보여주고, 진짜 date input은 화면 밖에 숨겨뒀다가
-   버튼을 누르면 달력이 열리게(showPicker) 했어요. */
-.date-compact-wrap{position:relative;display:inline-block;}
+.date-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+/* 날짜 컴팩트 감싸는 영역 및 버튼 고정 폭 지정 */
+.date-compact-wrap {
+  position: relative;
+  display: inline-block;
+}
+
 .date-compact-btn {
-  width: 76px !important;       /* 고정 폭 지정 */
-  text-align: center !important; /* 글자 중앙 정렬 */
-  padding: 5px 0 !important;     /* 좌우 여백을 제거하고 고정 크기 유지 */
+  width: 78px; /* 고정 너비로 맞춤 */
+  text-align: center;
   border: 1px solid var(--border);
   background: #fafbfd;
   border-radius: 6px;
+  padding: 5px 0;
   font-size: 12px;
   font-family: inherit;
   color: var(--text);
   cursor: pointer;
   white-space: nowrap;
-  display: inline-block;
 }
 .date-compact-btn:hover{border-color:var(--primary);color:var(--primary);}
 .date-compact-btn.empty{color:var(--text-light);}
@@ -267,7 +272,7 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
 .note-meta{font-size:11px;color:var(--text-light);margin-top:2px;}
 .status-select-sm{font-size:11.5px;border:1px solid var(--border);border-radius:999px;padding:3px 8px;background:#fff;color:var(--text-light);flex-shrink:0;}
 /* 담당자 select: "지수·다경" 글자가 다 보이는 선에서 최대한 좁혀요. */
-.status-select-sm.assignee-select-sm{width:88px !important;padding:3px 16px 3px 6px !important;font-size:11.5px;}
+.status-select-sm.assignee-select-sm{width:98px !important;padding:3px 16px 3px 6px !important;font-size:11.5px;}
 
 /* 각자 업무리스트 체크리스트 */
 .check-item{border:1px solid var(--border);border-left:4px solid #d5d5d5;border-radius:10px;padding:10px 12px;margin-bottom:8px;}
