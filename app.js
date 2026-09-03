@@ -13,7 +13,7 @@
   var STATUSES = ['시작 전','진행 중','완료'];
   var STATUS_ORDER = { '진행 중':0, '시작 전':1, '완료':2 };
   var PEOPLE = ['지수','다경'];
-  var COMM_WORK_CATS = ['처방검토','중재(Intervention)','상담/교육','회의','데이터/통계','서류/행정','기타'];
+  var COMM_WORK_CATS = ['처방검토','중재(Intervention)','TDM','상담/교육','회의','데이터/통계','서류/행정','인사','기타'];
   var COMM_DIRECTIONS = ['발신','수신','양방향'];
   var COMM_DEPTS = ['간호팀','전산팀','질병청','ASP사무국','인재경영팀','약제팀','기타'];
   var IDEA_STATUSES = ['검토중','채택','보류'];
@@ -206,7 +206,7 @@
   }
 
   /* ---------------- Firebase ---------------- */
-  var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false, weeklyMeetingChecked=false, notionImportChecked=false;
+  var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false, weeklyMeetingChecked=false, notionImportChecked=false, notionCommsImportChecked=false, notionPersonalImportChecked=false;
   function setSyncStatus(on, label){
     document.getElementById('syncDot').classList.toggle('on', on);
     document.getElementById('syncLabel').textContent = label;
@@ -281,6 +281,8 @@
         onDataChanged(TAB_FOR_COLLECTION[col]);
         if(col==='meetings') ensureWeeklyMeeting();
         if(col==='tasks') ensureNotionImport();
+        if(col==='comms') ensureNotionCommsImport();
+        if(col==='personal') ensureNotionPersonalImport();
         if(col==='manuals') migrateRemovedManualCategory();
       }, handleSnapError);
     });
@@ -350,6 +352,74 @@
       });
       batch.set(db.collection('meta').doc(markerId), { done:true, importedAt:Date.now() });
       batch.commit().then(function(){ showToast('노션 업무 리스트 '+items.length+'건을 가져왔어요'); }).catch(function(err){ console.error(err); });
+    }).catch(function(err){ console.error(err); });
+  }
+
+  // 지수님이 보내주신 노션 "소통일지" 캡처 화면에서 항목을 추출해 한 번만 소통일지에 옮겨 담습니다.
+  function ensureNotionCommsImport(){
+    if(!db || notionCommsImportChecked) return;
+    notionCommsImportChecked = true;
+    var markerId = 'notion-comms-import-2026-09';
+    db.collection('meta').doc(markerId).get().then(function(snap){
+      if(snap.exists) return;
+      var items = [
+        { slug:'2026-08-11-jeonsan-1', date:'2026-08-11', dept:'전산팀', workCategory:'중재(Intervention)', target:'고석길 대리', content:'2번 중재에서 IERPE 외래 처방이 잡히는거 해결됨 (08/14 이후로)', direction:'양방향', ext:'', participants:['지수'] },
+        { slug:'2026-08-18-nurse-micu', date:'2026-08-18', dept:'간호팀', workCategory:'TDM', target:'MICU 간호사', content:'김정숙(06001138)환자 12:00 투약인데, 11:37 약물농도 검사 접수됨', direction:'발신', ext:'2453', participants:['지수'] },
+        { slug:'2026-08-19-nurse-12', date:'2026-08-19', dept:'간호팀', workCategory:'TDM', target:'12병동 간호사', content:'이강진 환자 체중 미기재로 체중 물어봄 → bed-ridden 상태로 체중 측정 어려움 확인', direction:'발신', ext:'2424', participants:['지수'] },
+        { slug:'2026-08-24-jeonsan-2', date:'2026-08-24', dept:'전산팀', workCategory:'서류/행정', target:'고석길 대리', content:'질병청 항생제별 DOT 자료매매 연락함', direction:'발신', ext:'', participants:['지수'] },
+        { slug:'2026-08-24-kdca', date:'2026-08-24', dept:'질병청', workCategory:'서류/행정', target:'', content:'질병청 가입승인 언제되는지 물어봄 → 09/15 일괄 처리 예정', direction:'발신', ext:'', participants:['지수'] },
+        { slug:'2026-08-24-asp-office', date:'2026-08-24', dept:'ASP사무국', workCategory:'서류/행정', target:'사무국', content:'질병청 가입 했다고 메일 보냄 (윤다경/김지수)', direction:'발신', ext:'', participants:['지수','다경'] },
+        { slug:'2026-08-25-pharm', date:'2026-08-25', dept:'약제팀', workCategory:'서류/행정', target:'김은비 주임', content:'6,7월 제한항생제 사용량 파일 달라고해서 줌(항생제 소위원회)', direction:'수신', ext:'', participants:['지수'] },
+        { slug:'2026-08-25-nurse-12-vanco', date:'2026-08-25', dept:'간호팀', workCategory:'TDM', target:'12병동 간호사', content:'88087385 환자 VANCO TDM 빨리 해달라고 요청받음.', direction:'수신', ext:'', participants:['지수','다경'], note:'이후 완료됨을 노티함.' },
+        { slug:'2026-08-27-nurse-14-vanco', date:'2026-08-27', dept:'간호팀', workCategory:'TDM', target:'14병동 간호사', content:'24169957 환자 VANCO TDM 빨리 해달라고 요청받음.', direction:'수신', ext:'', participants:['지수'], note:'노티보다는 메신저를 더 잘... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)' },
+        { slug:'2026-08-31-jeonsan-3', date:'2026-08-31', dept:'전산팀', workCategory:'중재(Intervention)', target:'고석길 대리', content:'고석길 대리님 안녕하세요! [ASP 대상관리] 탭 관련 문의드립니다. 최근... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)', direction:'발신', ext:'', participants:['지수'], note:'답변 : 그냥 중복해서 중재걸... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)' },
+        { slug:'2026-08-31-hr', date:'2026-08-31', dept:'인재경영팀', workCategory:'인사', target:'이경환 대리', content:'1. 전담팀에 신규 인원(우리) 등록/결재 올라간 소식 2. 비품: 청구하는... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)', direction:'수신', ext:'', participants:['지수','다경'] },
+        { slug:'2026-09-02-pharm-2', date:'2026-09-02', dept:'약제팀', workCategory:'서류/행정', target:'김은비 약사', content:'7월 EDW 자료 약품 출고금액/ 항생제 출고금액 관련해서 올려오시기... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)', direction:'수신', ext:'', participants:['지수'] },
+        { slug:'2026-09-02-nurse-13-teico', date:'2026-09-02', dept:'간호팀', workCategory:'TDM', target:'13병동 간호사', content:'05020447 환자 TEICO trough 40 이상으로 독성 우려되어 추가 연락', direction:'발신', ext:'메신저', participants:['지수'] },
+        { slug:'2026-09-02-jeonsan-tdm', date:'2026-09-02', dept:'전산팀', workCategory:'TDM', target:'고석길 대리', content:'05020447 환자 TDM 최종 보고가 안되고 [무결성 제약에 위배]라는 오류', direction:'양방향', ext:'', participants:['지수'], note:'원격으로 해결해 주심.' }
+      ];
+      var batch = db.batch();
+      items.forEach(function(it){
+        var ref = db.collection('comms').doc('notion-import-'+it.slug);
+        batch.set(ref, {
+          date:it.date||'', dept:it.dept||COMM_DEPTS[0], workCategory:it.workCategory||COMM_WORK_CATS[0],
+          target:it.target||'', content:it.content||'', direction:it.direction||COMM_DIRECTIONS[0], ext:it.ext||'',
+          participants:it.participants||[], note:it.note||'', files:[],
+          clientTs:Date.now(), createdAt:Date.now(), createdBy:'노션 가져오기'
+        });
+      });
+      batch.set(db.collection('meta').doc(markerId), { done:true, importedAt:Date.now() });
+      batch.commit().then(function(){ showToast('노션 소통일지 '+items.length+'건을 가져왔어요 (첨부파일은 화면 캡처만으로는 복원할 수 없어 제외했어요)'); }).catch(function(err){ console.error(err); });
+    }).catch(function(err){ console.error(err); });
+  }
+
+  // 지수님이 보내주신 노션 "지수 개별 업무리스트" 캡처 화면에서 항목을 추출해 한 번만 개별 업무리스트에 옮겨 담습니다.
+  function ensureNotionPersonalImport(){
+    if(!db || notionPersonalImportChecked) return;
+    notionPersonalImportChecked = true;
+    var markerId = 'notion-personal-import-2026-09';
+    db.collection('meta').doc(markerId).get().then(function(snap){
+      if(snap.exists) return;
+      var items = [
+        { slug:'google-drive', category:'기타', title:'구글드라이브', content:'만들어야됨', status:'시작 전' },
+        { slug:'ox-quiz', category:'기타', title:'O/X 퀴즈', content:'형식 만들기', status:'완료', note:'URL: miricanvas.com/... (노션 원본이 잘려서 정확한 주소는 노션에서 확인해주세요)' },
+        { slug:'meeting-minutes-form', category:'회의', title:'회의록', content:'양식 만들기', status:'완료', startDate:'2026-08-25', deadline:'2026-08-25' },
+        { slug:'pharm-assoc-lecture', category:'교육', title:'병원약사회 강의', content:'서울/강원/제주 온라인 학술세미나', status:'완료', deadline:'2026-08-31' },
+        { slug:'idsa-guideline', category:'개인공부', title:'IDSA 가이드라인', content:'c-UTI(1회독0831) MDR CAP CDI(0921회독) (노션 원본 일부가 잘려서 정확한 내용은 노션에서 확인해주세요)', status:'진행 중' },
+        { slug:'daily-study', category:'개인공부', title:'Daily study', content:'', status:'진행 중', startDate:'2026-07-01' },
+        { slug:'tdm-form-unify', category:'TDM', title:'TDM 양식 통일', content:'TDM 양식 통일, 여태까지 했던 회신문 합쳐서 개선안', status:'진행 중', startDate:'2026-08-26' }
+      ];
+      var batch = db.batch();
+      items.forEach(function(it){
+        var ref = db.collection('personal').doc('notion-import-'+it.slug);
+        batch.set(ref, {
+          owner:'지수', category:it.category||'', title:it.title||'', content:it.content||'', status:it.status||'시작 전',
+          startDate:it.startDate||'', deadline:it.deadline||'', followUp:false, note:it.note||'', files:[],
+          clientTs:Date.now(), createdAt:Date.now(), createdBy:'노션 가져오기'
+        });
+      });
+      batch.set(db.collection('meta').doc(markerId), { done:true, importedAt:Date.now() });
+      batch.commit().then(function(){ showToast('노션 개별 업무리스트 '+items.length+'건을 가져왔어요'); }).catch(function(err){ console.error(err); });
     }).catch(function(err){ console.error(err); });
   }
 
@@ -477,11 +547,6 @@
     if(['png','jpg','jpeg','gif','webp'].indexOf(ext)>-1) return 'image';
     return null;
   }
-  // 브라우저 기본 PDF 뷰어는 그대로 두면 툴바·페이지 썸네일 사이드바까지 통째로 나와서 화면을 다 차지해요.
-  // #toolbar=0&navpanes=0&scrollbar=0 파라미터로 그 UI를 끄고 문서 내용만 깔끔하게 보이게 합니다.
-  function pdfPreviewUrl(url){
-    return url + (url.indexOf('#')>-1 ? '&' : '#') + 'toolbar=0&navpanes=0&scrollbar=0';
-  }
   function renderFileLinks(col, doc){
     var files = doc.files || [];
     var rows = files.map(function(f){
@@ -493,17 +558,18 @@
         '<span class="filelink-chip-name">'+escapeHtml(label)+'</span>';
       var kind = f.url ? previewKind(label) : null;
       var isOpen = !!state.filePreviewOpen[f.id];
-      var previewBtn = kind ? '<button class="icon-btn" data-action="toggle-file-preview" data-collection="'+col+'" data-id="'+doc.id+'" data-item="'+f.id+'" data-url="'+escapeHtml(f.url)+'" data-kind="'+kind+'" title="바로 보기">'+(isOpen?'🔽':'👁')+'</button>' : '';
-      var previewPanel = '';
-      if(kind && isOpen){
-        previewPanel = kind==='pdf' ?
-          '<iframe class="filelink-preview" src="'+escapeHtml(pdfPreviewUrl(f.url))+'" loading="lazy"></iframe>' :
-          '<img class="filelink-preview-img" src="'+escapeHtml(f.url)+'" loading="lazy" alt="'+escapeHtml(label)+'">';
-      }
+      // PDF는 브라우저 내장 뷰어를 그대로 끼워넣으면 위아래/양옆으로 까만 여백이 생겨서 보기 안 좋았어요.
+      // 그래서 PDF는 임베드 대신 작은 "PDF" 표시만 붙이고, 파일명을 누르면 새 탭에서 잘리지 않고 온전히 보여요.
+      // 이미지는 그 자리에서 바로 볼 수 있게 미리보기를 그대로 유지합니다.
+      var typeBadge = kind==='pdf' ? '<span class="filelink-type-badge">PDF</span>' : '';
+      var previewBtn = kind==='image' ? '<button class="icon-btn" data-action="toggle-file-preview" data-collection="'+col+'" data-id="'+doc.id+'" data-item="'+f.id+'" data-url="'+escapeHtml(f.url)+'" data-kind="'+kind+'" title="바로 보기">'+(isOpen?'🔽':'👁')+'</button>' : '';
+      var previewPanel = (kind==='image' && isOpen) ?
+        '<img class="filelink-preview-img" src="'+escapeHtml(f.url)+'" loading="lazy" alt="'+escapeHtml(label)+'">' : '';
       return '<div class="filelink-chip-wrap">'+
         '<div class="filelink-chip" title="'+escapeHtml(label)+'">'+
           '<span class="filelink-icon">📄</span>'+
           nameEl+
+          typeBadge+
           previewBtn+
           '<button class="icon-btn danger" data-action="del-filelink" data-collection="'+col+'" data-id="'+doc.id+'" data-item="'+f.id+'" title="삭제">✕</button>'+
         '</div>'+
@@ -962,7 +1028,7 @@
     }).join('');
 
     var headRow = '<tr>'+
-      (showMajorCol ? '<th style="min-width:80px">분류</th>' : '')+
+      (showMajorCol ? '<th style="min-width:56px">분류</th>' : '')+
       '<th style="min-width:280px">업무 (소분류 · 업무명)</th>'+
       '<th style="min-width:200px">내용</th>'+
       '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:190px">날짜'+sortArrow('date')+'</th>'+
@@ -1060,7 +1126,7 @@
       '<div class="card-head"><h3>🙋 개별 업무리스트</h3><button class="btn" data-action="add-personal" data-owner="'+owner+'">+ 추가</button></div>'+
       '<div class="sheet-tab-bar">'+tabsHtml+'</div>'+
       (items.length ?
-        '<div class="table-scroll"><table><thead><tr><th style="min-width:90px">분류</th><th style="min-width:130px">이름</th><th style="min-width:220px">업무</th><th style="min-width:110px">진행도</th><th style="min-width:140px">시작</th><th style="min-width:150px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
+        '<div class="table-scroll"><table><thead><tr><th style="min-width:64px">분류</th><th style="min-width:130px">이름</th><th style="min-width:220px">업무</th><th style="min-width:110px">진행도</th><th style="min-width:140px">시작</th><th style="min-width:150px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
         '<tbody>'+rows+'</tbody></table></div>'
         : '<div class="empty-state">등록된 업무가 없습니다. "+ 추가"를 눌러 지금 하고 있는 공부/업무를 기록해보세요.</div>')+
     '</div>';
@@ -1365,8 +1431,7 @@
         '<span class="note-meta">'+escapeHtml(f.createdBy||'')+'</span>'+
       '</div>'+
       '<div class="filelinks">'+
-        (f.url ? '<div class="filelink-chip" title="'+escapeHtml(f.title||'')+'"><span class="filelink-icon">📄</span><a class="filelink-chip-name" href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener">'+escapeHtml(f.title||'파일')+'</a></div>' : '<div class="comments-empty">업로드된 파일이 없습니다.</div>')+
-        (f.url && previewKind(f.title) === 'pdf' ? '<iframe class="filelink-preview" src="'+escapeHtml(pdfPreviewUrl(f.url))+'" loading="lazy"></iframe>' : '')+
+        (f.url ? '<div class="filelink-chip" title="'+escapeHtml(f.title||'')+'"><span class="filelink-icon">📄</span><a class="filelink-chip-name" href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener">'+escapeHtml(f.title||'파일')+'</a>'+(previewKind(f.title)==='pdf'?'<span class="filelink-type-badge">PDF</span>':'')+'</div>' : '<div class="comments-empty">업로드된 파일이 없습니다.</div>')+
         (f.url && previewKind(f.title) === 'image' ? '<img class="filelink-preview-img" src="'+escapeHtml(f.url)+'" loading="lazy" alt="'+escapeHtml(f.title||'')+'">' : '')+
         '<input type="file" class="filelink-upload-input hidden" id="'+uploadId+'" data-collection="files" data-id="'+f.id+'" data-single="1">'+
         '<button class="btn ghost sm" type="button" data-action="trigger-upload" data-target="'+uploadId+'">📤 '+(f.url?'파일 교체':'파일 업로드')+'</button>'+
@@ -1470,17 +1535,11 @@
         var existing = wrap.querySelector('.filelink-preview, .filelink-preview-img');
         if(existing) existing.remove();
         if(willOpen){
-          var panel;
-          if(el.dataset.kind==='pdf'){
-            panel = document.createElement('iframe');
-            panel.className = 'filelink-preview';
-            panel.src = pdfPreviewUrl(el.dataset.url);
-          } else {
-            panel = document.createElement('img');
-            panel.className = 'filelink-preview-img';
-            panel.alt = '';
-            panel.src = el.dataset.url;
-          }
+          // 이 토글 버튼은 이제 이미지 파일에만 붙어요 (PDF는 새 탭에서 온전히 보는 쪽이 더 나아서 PDF 배지로 대체했어요).
+          var panel = document.createElement('img');
+          panel.className = 'filelink-preview-img';
+          panel.alt = '';
+          panel.src = el.dataset.url;
           panel.loading = 'lazy';
           wrap.appendChild(panel);
         }
