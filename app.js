@@ -655,6 +655,7 @@
     taskShowRecurringPanel: false,
     personalActiveOwner: PEOPLE[0],
     personalDeadlineOpen: {},
+    personalGroupByCat: false,
     manualActiveCat: MANUAL_CATS[0],
     manualActiveId: null,
     manualActiveCadence: 'all',
@@ -1108,8 +1109,15 @@
   /* ================= 🙋 각자 업무리스트 (엑셀 시트 방식) ================= */
   function renderPersonalTab(){
     var owner = state.personalActiveOwner || PEOPLE[0];
+    var catOrder = personalCategoryOptions(null);
     var items = state.personal.filter(function(p){ return p.owner===owner; })
       .sort(function(a,b){
+        if(state.personalGroupByCat){
+          var ac = catOrder.indexOf(a.category||''), bc = catOrder.indexOf(b.category||'');
+          if(ac===-1) ac = catOrder.length;
+          if(bc===-1) bc = catOrder.length;
+          if(ac!==bc) return ac-bc;
+        }
         var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
         if(so!==0) return so;
         return (b.clientTs||0)-(a.clientTs||0);
@@ -1122,11 +1130,15 @@
       var cnt = state.personal.filter(function(x){ return x.owner===p; }).length;
       return '<button class="subtab-btn sheet-tab" data-action="personal-set-owner" data-owner="'+p+'" style="'+style+'">'+p+' <span class="subtab-count">'+cnt+'</span></button>';
     }).join('');
+    // 분류 색깔만으로는 비슷한 색이 나올 수 있어 구분이 잘 안 될 때가 있어서,
+    // "분류" 열 제목을 누르면 같은 분류끼리 모아서 볼 수 있게 정렬 토글을 추가했어요.
+    var catThLabel = '분류'+(state.personalGroupByCat ? ' ▾' : '');
     return '<div class="card">'+
       '<div class="card-head"><h3>🙋 개별 업무리스트</h3><button class="btn" data-action="add-personal" data-owner="'+owner+'">+ 추가</button></div>'+
       '<div class="sheet-tab-bar">'+tabsHtml+'</div>'+
+      '<div class="table-hint">"분류" 열 제목을 누르면 같은 분류끼리 모아서 볼 수 있어요.</div>'+
       (items.length ?
-        '<div class="table-scroll"><table><thead><tr><th style="min-width:64px">분류</th><th style="min-width:130px">이름</th><th style="min-width:220px">업무</th><th style="min-width:110px">진행도</th><th style="min-width:140px">시작</th><th style="min-width:150px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
+        '<div class="table-scroll"><table><thead><tr><th data-action="sort-personal-cat" class="sortable-th" style="min-width:64px">'+catThLabel+'</th><th style="min-width:130px">이름</th><th style="min-width:220px">업무</th><th style="min-width:110px">진행도</th><th style="min-width:140px">시작</th><th style="min-width:150px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
         '<tbody>'+rows+'</tbody></table></div>'
         : '<div class="empty-state">등록된 업무가 없습니다. "+ 추가"를 눌러 지금 하고 있는 공부/업무를 기록해보세요.</div>')+
     '</div>';
@@ -1620,6 +1632,10 @@
       var cf = el.dataset.field;
       if(state.commSortField===cf){ state.commSortDir = state.commSortDir==='asc' ? 'desc' : 'asc'; }
       else { state.commSortField = cf; state.commSortDir = 'asc'; }
+      renderActiveTab();
+    }
+    else if(action==='sort-personal-cat'){
+      state.personalGroupByCat = !state.personalGroupByCat;
       renderActiveTab();
     }
     else if(action==='toggle-person'){
