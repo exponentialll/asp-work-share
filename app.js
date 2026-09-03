@@ -6,8 +6,10 @@
 (function(){
   'use strict';
 
-  var MAJOR_CATS = ['교육','행정','시스템','중재'];
+  var MAJOR_CATS = ['행정','교육','중재'];
   var MINOR_CATS = ['일간','주간','격주','월별','분기','반기','연간','필수','비정기'];
+  // 행정 업무는 대부분 정기 보고 성격이라, 소분류 선택지를 주기 흐름 순서(월별→분기→반기→연간→비정기)로 좁혀서 보여줘요.
+  var ADMIN_MINOR_CATS = ['월별','분기','반기','연간','비정기'];
   var STATUSES = ['시작 전','진행 중','완료'];
   var STATUS_ORDER = { '진행 중':0, '시작 전':1, '완료':2 };
   var PEOPLE = ['지수','다경'];
@@ -475,6 +477,11 @@
     if(['png','jpg','jpeg','gif','webp'].indexOf(ext)>-1) return 'image';
     return null;
   }
+  // 브라우저 기본 PDF 뷰어는 그대로 두면 툴바·페이지 썸네일 사이드바까지 통째로 나와서 화면을 다 차지해요.
+  // #toolbar=0&navpanes=0&scrollbar=0 파라미터로 그 UI를 끄고 문서 내용만 깔끔하게 보이게 합니다.
+  function pdfPreviewUrl(url){
+    return url + (url.indexOf('#')>-1 ? '&' : '#') + 'toolbar=0&navpanes=0&scrollbar=0';
+  }
   function renderFileLinks(col, doc){
     var files = doc.files || [];
     var rows = files.map(function(f){
@@ -490,7 +497,7 @@
       var previewPanel = '';
       if(kind && isOpen){
         previewPanel = kind==='pdf' ?
-          '<iframe class="filelink-preview" src="'+escapeHtml(f.url)+'" loading="lazy"></iframe>' :
+          '<iframe class="filelink-preview" src="'+escapeHtml(pdfPreviewUrl(f.url))+'" loading="lazy"></iframe>' :
           '<img class="filelink-preview-img" src="'+escapeHtml(f.url)+'" loading="lazy" alt="'+escapeHtml(label)+'">';
       }
       return '<div class="filelink-chip-wrap">'+
@@ -875,11 +882,17 @@
         .sort(function(a,b){ return (a.clientTs||0)-(b.clientTs||0); });
       var cc = CADENCE_COLORS[cad] || {fg:'#888',bg:'#eee'};
       var rows = items.map(function(r){
-        var done = r.lastDonePeriod===pi.key;
+        // 예전 데이터(lastDonePeriod만 있고 status가 없는 경우)도 자연스럽게 "완료"로 보이도록 이어받아요.
+        var legacyDone = r.lastDonePeriod===pi.key;
+        var hasCurStatus = r.statusPeriod===pi.key;
+        var curStatus = hasCurStatus ? (r.status||'시작 전') : (legacyDone ? '완료' : '시작 전');
+        var done = curStatus==='완료';
         if(done) doneCount++;
+        var rsc = STATUS_COLORS[curStatus] || {fg:'#888',bg:'#eee'};
+        var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
         return '<div class="recur-row'+(done?' done':'')+'" data-id="'+r.id+'">'+
-          '<button class="recur-toggle'+(done?' done':'')+'" data-action="toggle-recur-done" data-id="'+r.id+'" data-period="'+pi.key+'" title="완료로 표시">'+(done?'✅':'⬜')+'</button>'+
           '<input type="text" class="recur-title-input" placeholder="업무명" data-collection="recurring" data-id="'+r.id+'" data-field="label" value="'+escapeHtml(r.label||'')+'">'+
+          '<select class="status-select-sm" data-collection="recurring" data-id="'+r.id+'" data-field="recurStatus" data-period="'+pi.key+'" style="background:'+rsc.bg+';color:'+rsc.fg+';">'+statusOpts+'</select>'+
           '<button class="icon-btn danger" data-action="del-row" data-collection="recurring" data-id="'+r.id+'" title="삭제">✕</button>'+
         '</div>';
       }).join('');
@@ -988,14 +1001,20 @@
 
   function renderTaskRow(t, showMajorCol){
     var curMinor = t.minor || '';
-    var minorOpts = '<option value="">-</option>'+MINOR_CATS.map(function(c){ return '<option value="'+c+'"'+(t.minor===c?' selected':'')+'>'+c+'</option>'; }).join('');
-    var mnc = MINOR_CAT_COLORS[curMinor] || {fg:'#888',bg:'#f0f0f0'};
+    var minorSource = (t.major||MAJOR_CATS[0])==='행정' ? ADMIN_MINOR_CATS : MINOR_CATS;
+    var minorOptionsList = minorSource.slice();
+    if(curMinor && minorOptionsList.indexOf(curMinor)===-1) minorOptionsList.push(curMinor);
+    var minorOpts = '<option value="">-</option>'+
+      minorOptionsList.map(function(c){ return '<option value="'+c+'"'+(curMinor===c?' selected':'')+'>'+escapeHtml(c)+'</option>'; }).join('')+
+      '<option value="__new__">+ 직접 추가...</option>';
+    var mnc = MINOR_CAT_COLORS[curMinor] || (curMinor ? hashColor(curMinor) : {fg:'#888',bg:'#f0f0f0'});
     var curStatus = t.status||'시작 전';
     var sc = STATUS_COLORS[curStatus] || {fg:'#888',bg:'#eee'};
     var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
     var curAssignees = t.assignees || [];
-    var assigneeVal = curAssignees.length>=2 ? 'both' : (curAssignees[0] || '');
-    var assigneeOpts = '<option value="">미정</option>'+
+    // 담당자를 지정 안 한(빈 배열) 업무는 기본적으로 "지수·다경" 둘 다로 보여줘요.
+    var assigneeVal = curAssignees.length===1 ? curAssignees[0] : 'both';
+    var assigneeOpts =
       PEOPLE.map(function(p){ return '<option value="'+p+'"'+(assigneeVal===p?' selected':'')+'>'+p+'</option>'; }).join('')+
       '<option value="both"'+(assigneeVal==='both'?' selected':'')+'>지수·다경</option>';
     var showEnd = !!t.endDate || !!state.taskEndDateOpen[t.id];
@@ -1347,7 +1366,7 @@
       '</div>'+
       '<div class="filelinks">'+
         (f.url ? '<div class="filelink-chip" title="'+escapeHtml(f.title||'')+'"><span class="filelink-icon">📄</span><a class="filelink-chip-name" href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener">'+escapeHtml(f.title||'파일')+'</a></div>' : '<div class="comments-empty">업로드된 파일이 없습니다.</div>')+
-        (f.url && previewKind(f.title) === 'pdf' ? '<iframe class="filelink-preview" src="'+escapeHtml(f.url)+'" loading="lazy"></iframe>' : '')+
+        (f.url && previewKind(f.title) === 'pdf' ? '<iframe class="filelink-preview" src="'+escapeHtml(pdfPreviewUrl(f.url))+'" loading="lazy"></iframe>' : '')+
         (f.url && previewKind(f.title) === 'image' ? '<img class="filelink-preview-img" src="'+escapeHtml(f.url)+'" loading="lazy" alt="'+escapeHtml(f.title||'')+'">' : '')+
         '<input type="file" class="filelink-upload-input hidden" id="'+uploadId+'" data-collection="files" data-id="'+f.id+'" data-single="1">'+
         '<button class="btn ghost sm" type="button" data-action="trigger-upload" data-target="'+uploadId+'">📤 '+(f.url?'파일 교체':'파일 업로드')+'</button>'+
@@ -1407,7 +1426,7 @@
         renderActiveTab();
       });
     }
-    else if(action==='add-task') addRow('tasks', { major:(state.taskActiveMajor==='전체'?MAJOR_CATS[0]:state.taskActiveMajor), minor:'', title:'', date:todayStr(), endDate:'', status:'시작 전', content:'', assignees:[], comments:[], files:[] });
+    else if(action==='add-task') addRow('tasks', { major:(state.taskActiveMajor==='전체'?MAJOR_CATS[0]:state.taskActiveMajor), minor:'', title:'', date:todayStr(), endDate:'', status:'시작 전', content:'', assignees:PEOPLE.slice(), comments:[], files:[] });
     else if(action==='add-personal') addRow('personal', { owner:el.dataset.owner, category:'', title:'', content:'', status:'시작 전', startDate:'', deadline:'', followUp:false, note:'', files:[] });
     else if(action==='add-meeting'){
       var mType = el.dataset.type || state.meetingActiveType || MEETING_TYPES[0];
@@ -1433,7 +1452,7 @@
       });
     }
     else if(action==='add-dday') addRow('dday', { title:'', date:todayStr() });
-    else if(action==='add-recur') addRow('recurring', { label:'', cadence: el.dataset.cadence, lastDonePeriod:'' });
+    else if(action==='add-recur') addRow('recurring', { label:'', cadence: el.dataset.cadence, lastDonePeriod:'', status:'시작 전', statusPeriod:'' });
     else if(action==='add-pin'){
       var pinInput = document.getElementById('pinQuickInput');
       if(pinInput && pinInput.value.trim()){ addRow('pins', { text: pinInput.value.trim(), done:false }); pinInput.value=''; }
@@ -1455,12 +1474,13 @@
           if(el.dataset.kind==='pdf'){
             panel = document.createElement('iframe');
             panel.className = 'filelink-preview';
+            panel.src = pdfPreviewUrl(el.dataset.url);
           } else {
             panel = document.createElement('img');
             panel.className = 'filelink-preview-img';
             panel.alt = '';
+            panel.src = el.dataset.url;
           }
-          panel.src = el.dataset.url;
           panel.loading = 'lazy';
           wrap.appendChild(panel);
         }
@@ -1530,14 +1550,6 @@
       if(!requireFirebase()) return;
       if(!confirm('이 회의록을 삭제할까요?')) return;
       db.collection('meetings').doc(id).delete().then(function(){ state.meetingActiveId=null; renderActiveTab(); }).catch(function(err){ showToast('삭제 실패: '+err.message); });
-    }
-    else if(action==='toggle-recur-done'){
-      if(!requireFirebase()) return;
-      var rdoc = state.recurring.find(function(x){ return x.id===id; });
-      if(!rdoc) return;
-      var period = el.dataset.period;
-      var newVal = rdoc.lastDonePeriod===period ? '' : period;
-      db.collection('recurring').doc(id).update({ lastDonePeriod:newVal, updatedAt:Date.now() }).catch(function(err){ showToast('저장 실패: '+err.message); });
     }
     else if(action==='sort-tasks'){
       var f = el.dataset.field;
@@ -1652,10 +1664,25 @@
       else { renderActiveTab(); }
       return;
     }
+    if(t.dataset.field==='minor' && t.dataset.collection==='tasks' && t.value==='__new__'){
+      var newMinor = prompt('새 소분류 이름을 입력하세요');
+      if(newMinor && newMinor.trim()){ flushSaveNow('tasks', t.dataset.id, 'minor', newMinor.trim()); }
+      else { renderActiveTab(); }
+      return;
+    }
     // 담당자 드롭다운(지수/다경/지수·다경)은 실제로는 tasks.assignees 배열 필드로 저장돼요.
     if(t.dataset.field==='assigneesSelect'){
       var arr = t.value==='both' ? PEOPLE.slice() : (t.value ? [t.value] : []);
       flushSaveNow(t.dataset.collection, t.dataset.id, 'assignees', arr);
+      return;
+    }
+    // 정기업무 진행도: 어느 "기간"에 대한 상태인지(statusPeriod)도 같이 저장해서, 기간이 바뀌면
+    // (다음달/다음분기 등) 예전 상태가 자동으로 "시작 전"으로 보이도록(=자동 리셋) 해요.
+    if(t.dataset.field==='recurStatus'){
+      if(!db) return;
+      var period = t.dataset.period, newStatus = t.value;
+      var payload = { status:newStatus, statusPeriod:period, lastDonePeriod:(newStatus==='완료'?period:''), updatedAt:Date.now() };
+      db.collection('recurring').doc(t.dataset.id).update(payload).catch(function(err){ showToast('저장 실패: '+err.message); });
       return;
     }
     if(!t.dataset.field || !t.dataset.collection) return;
@@ -1665,7 +1692,7 @@
       t.style.background = STATUS_COLORS[val].bg; t.style.color = STATUS_COLORS[val].fg;
     }
     if(t.dataset.field==='minor'){
-      var mc2 = MINOR_CAT_COLORS[val] || {fg:'#888',bg:'#f0f0f0'};
+      var mc2 = MINOR_CAT_COLORS[val] || (val ? hashColor(val) : {fg:'#888',bg:'#f0f0f0'});
       t.style.background = mc2.bg; t.style.color = mc2.fg;
     }
     if(t.dataset.field==='direction' && DIRECTION_COLORS[val]){
