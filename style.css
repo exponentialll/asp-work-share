@@ -31,13 +31,25 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD 
 /* 전체 레이아웃: 좌측 사이드바(미니캘린더·D-day·메모, 고정폭) + 우측 메인 콘텐츠(가변, 화면 꽉 채움) */
 .app-body{width:100%;margin:0;padding:18px 26px 60px;display:flex;align-items:flex-start;gap:22px;}
 .sidebar{width:230px;flex-shrink:0;position:sticky;top:16px;display:flex;flex-direction:column;gap:14px;}
-.app-main{flex:1;min-width:0;}
+.app-main{flex:1;min-width:0;position:relative;z-index:1;} /* 우측 메인 영역이 사이드바 위로 겹치지 않게 보정 */
 main{padding:0;}
 
-.sidebar-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;}
+.sidebar-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;overflow:hidden;} /* overflow:hidden 추가로 밖으로 삐져나감 방지 */
 .sidebar-card-head{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:700;margin-bottom:10px;color:var(--text);}
 .sidebar-empty{font-size:11.5px;color:var(--text-light);padding:8px 0;text-align:center;}
 .sidebar-cal-more{width:100%;margin-top:8px;}
+
+/* 사이드바 D-day 항목이 사이드바 폭(230px) 안에서 유연하게 줄어들도록 설정 */
+.sidebar-dday-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.sidebar-dday-row .dday-title-input {
+  flex: 1;
+  min-width: 0; /* 제목 입력창이 길어져도 X 버튼을 밖으로 밀어내지 않음 */
+}
 
 /* 미니 캘린더 */
 .mini-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
