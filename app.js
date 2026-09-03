@@ -15,7 +15,8 @@
   var COMM_DIRECTIONS = ['발신','수신','양방향'];
   var COMM_DEPTS = ['간호팀','전산팀','질병청','ASP사무국','인재경영팀','약제팀','기타'];
   var IDEA_STATUSES = ['검토중','채택','보류'];
-  var MANUAL_CATS = ['중재','TDM','행정','교육','시스템','개인 공부','기타'];
+  var MANUAL_CATS = ['중재','TDM','행정','교육','시스템','기타'];
+  var MANUAL_CADENCES = ['월별','분기별','반기별','연간'];
   var FILE_CATS = ['프로그램','양식','매뉴얼','공부자료','가이드라인','기타'];
   var CADENCES = ['매일','주간','매달','분기별','반기별','연간'];
   var PERSONAL_BASE_CATS = ['회의','교육','TDM','기타'];
@@ -68,8 +69,14 @@
     '행정':   { fg:'#3b7dd8', bg:'#e8f0fd' },
     '교육':   { fg:'#7d7d7d', bg:'#efefef' },
     '시스템': { fg:'#d98a3d', bg:'#fdf1e4' },
-    '개인 공부': { fg:'#d6608a', bg:'#fbe9ef' },
     '기타':   { fg:'#9a9a9a', bg:'#f0f0f0' }
+  };
+  // 업무매뉴얼 중 "행정" 분류는 문서가 많아지기 쉬워서, 월별/분기별/반기별/연간 주기로 한 번 더 나눠 볼 수 있어요.
+  var MANUAL_CADENCE_COLORS = {
+    '월별':   { fg:'#8f5fd6', bg:'#f2ecfb' },
+    '분기별': { fg:'#d98a3d', bg:'#fdf1e4' },
+    '반기별': { fg:'#c9527a', bg:'#fbe4ed' },
+    '연간':   { fg:'#c65c5c', bg:'#fbeaea' }
   };
   var FILE_CAT_COLORS = {
     '프로그램': { fg:'#3b7dd8', bg:'#e8f0fd' },
@@ -158,7 +165,7 @@
     el.style.height='auto';
     var sh = el.scrollHeight;
     var max = 180;
-    el.style.height = (sh>max ? max : Math.max(sh,50))+'px';
+    el.style.height = (sh>max ? max : Math.max(sh,56))+'px';
   }
   var WEEKDAY_KOR = ['일','월','화','수','목','금','토'];
 
@@ -197,7 +204,7 @@
   }
 
   /* ---------------- Firebase ---------------- */
-  var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false, weeklyMeetingChecked=false;
+  var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false, weeklyMeetingChecked=false, notionImportChecked=false;
   function setSyncStatus(on, label){
     document.getElementById('syncDot').classList.toggle('on', on);
     document.getElementById('syncLabel').textContent = label;
@@ -271,7 +278,20 @@
         state[STATE_KEY[col]] = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
         onDataChanged(TAB_FOR_COLLECTION[col]);
         if(col==='meetings') ensureWeeklyMeeting();
+        if(col==='tasks') ensureNotionImport();
+        if(col==='manuals') migrateRemovedManualCategory();
       }, handleSnapError);
+    });
+  }
+
+  // "개인 공부" 분류를 없앴는데 예전에 그 분류로 저장된 매뉴얼이 있으면 분류 탭 어디에도 안 걸려서
+  // 화면에서 안 보이게 될 수 있어요. 그런 문서가 있으면 "기타"로 자동 이동시켜 계속 보이게 합니다.
+  function migrateRemovedManualCategory(){
+    if(!db) return;
+    state.manuals.forEach(function(m){
+      if(m.category === '개인 공부'){
+        db.collection('manuals').doc(m.id).update({ category:'기타' }).catch(function(err){ console.error(err); });
+      }
     });
   }
 
@@ -293,6 +313,41 @@
           attendees:PEOPLE.slice(), content:'', files:[], clientTs:Date.now(), createdAt:Date.now(), createdBy:'자동 생성'
         });
       }
+    }).catch(function(err){ console.error(err); });
+  }
+
+  // 지수님이 보내주신 노션 "ASP 업무 리스트" 캡처 화면에서 항목을 추출해 한 번만 업무 리스트에 옮겨 담습니다.
+  // meta/notion-import-2026-09 마커 문서로 이미 가져왔는지 확인하기 때문에, 앱을 여러 번 열거나
+  // 지수·다경 두 분이 동시에 접속해도 중복 생성되지 않아요.
+  function ensureNotionImport(){
+    if(!db || notionImportChecked) return;
+    notionImportChecked = true;
+    var markerId = 'notion-import-2026-09';
+    db.collection('meta').doc(markerId).get().then(function(snap){
+      if(snap.exists) return;
+      var items = [
+        { slug:'edu-infection-symposium', major:'교육', minor:'필수', title:'감염약료 심포지엄 참가(실시간zoom)', date:'2026-09-23', status:'진행 중', content:'신청기간:09/01~09/18 (완)', assignees:['지수'] },
+        { slug:'edu-fall-academic-seminar', major:'교육', minor:'', title:'추계학술세미나 참가', date:'2026-10-21', status:'시작 전', content:'신청기간: 08/19~09/18', assignees:[] },
+        { slug:'admin-kdca-performance-report', major:'행정', minor:'비정기', title:'질병청 성과 제출', date:'2026-09-09', status:'완료', content:'이경환 대리님 제출 완료(0828)', assignees:[] },
+        { slug:'admin-restricted-antibiotic-usage', major:'행정', minor:'월별', title:'제한항균제 사용 현황', date:'2026-09-14', endDate:'2026-09-18', status:'진행 중', content:'8월(→)/김은비주임께도 제출...', assignees:[] },
+        { slug:'admin-konas-carbapenem-q3', major:'행정', minor:'분기', title:'3분기 KONAS carbaphenem 사용량 업로드', date:'2026-10-31', status:'시작 전', content:'2026.07-2026.09 범위\n🔗 원본 노션 URL이 캡처에서 잘려서 정확한 주소는 노션에서 다시 확인해주세요 (notion.so/3c3...로 시작)', assignees:[] },
+        { slug:'admin-konas-h2-2025-report', major:'행정', minor:'반기', title:'2025 하반기 KONAS 환류 자료 제작', date:'', status:'시작 전', content:'', assignees:[] },
+        { slug:'admin-kdca-asp-annual-report', major:'행정', minor:'연간', title:'질병청 ASP 연간보고서 작성', date:'', status:'시작 전', content:'', assignees:[] },
+        { slug:'intervention-accept', major:'중재', minor:'주간', title:'중재수용', date:'2026-08-29', status:'진행 중', content:'', assignees:['지수'] },
+        { slug:'intervention-13', major:'중재', minor:'격주', title:'13', date:'2026-08-24', endDate:'2026-09-04', status:'진행 중', content:'', assignees:[] },
+        { slug:'intervention-278', major:'중재', minor:'격주', title:'278', date:'2026-08-24', endDate:'2026-09-04', status:'진행 중', content:'', assignees:['지수'] }
+      ];
+      var batch = db.batch();
+      items.forEach(function(it){
+        var ref = db.collection('tasks').doc('notion-import-'+it.slug);
+        batch.set(ref, {
+          major:it.major, minor:it.minor||'', title:it.title, date:it.date||'', endDate:it.endDate||'',
+          status:it.status, content:it.content||'', assignees:it.assignees||[], comments:[], files:[],
+          clientTs:Date.now(), createdAt:Date.now(), createdBy:'노션 가져오기'
+        });
+      });
+      batch.set(db.collection('meta').doc(markerId), { done:true, importedAt:Date.now() });
+      batch.commit().then(function(){ showToast('노션 업무 리스트 '+items.length+'건을 가져왔어요'); }).catch(function(err){ console.error(err); });
     }).catch(function(err){ console.error(err); });
   }
 
@@ -412,15 +467,40 @@
       showToast('업로드 실패: '+(err && err.message ? err.message : 'Storage 설정을 확인하세요'));
     });
   }
+  // PDF/이미지 파일은 새 탭을 열지 않아도 그 자리에서 바로 미리 볼 수 있게 확장자를 확인합니다.
+  function previewKind(name){
+    var m = /\.([a-z0-9]+)$/i.exec(name||'');
+    var ext = m ? m[1].toLowerCase() : '';
+    if(ext==='pdf') return 'pdf';
+    if(['png','jpg','jpeg','gif','webp'].indexOf(ext)>-1) return 'image';
+    return null;
+  }
   function renderFileLinks(col, doc){
     var files = doc.files || [];
     var rows = files.map(function(f){
       var label = f.name || f.url || '(이름 없음)';
-      return '<div class="filelink-chip" title="'+escapeHtml(label)+'">'+
-        '<span class="filelink-icon">📄</span>'+
-        '<span class="filelink-chip-name">'+escapeHtml(label)+'</span>'+
-        (f.url ? '<a class="filelink-open" href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener">열기↗</a>' : '')+
-        '<button class="icon-btn danger" data-action="del-filelink" data-collection="'+col+'" data-id="'+doc.id+'" data-item="'+f.id+'" title="삭제">✕</button>'+
+      // 이름 부분 전체를 클릭 가능한 링크로 만들어서, 굳이 별도의 "열기" 글자를 누르지 않아도
+      // 파일명을 클릭하면 바로 새 탭에서 파일이 열리도록(다운로드/미리보기) 했어요.
+      var nameEl = f.url ?
+        '<a class="filelink-chip-name" href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener">'+escapeHtml(label)+'</a>' :
+        '<span class="filelink-chip-name">'+escapeHtml(label)+'</span>';
+      var kind = f.url ? previewKind(label) : null;
+      var isOpen = !!state.filePreviewOpen[f.id];
+      var previewBtn = kind ? '<button class="icon-btn" data-action="toggle-file-preview" data-collection="'+col+'" data-id="'+doc.id+'" data-item="'+f.id+'" data-url="'+escapeHtml(f.url)+'" data-kind="'+kind+'" title="바로 보기">'+(isOpen?'🔽':'👁')+'</button>' : '';
+      var previewPanel = '';
+      if(kind && isOpen){
+        previewPanel = kind==='pdf' ?
+          '<iframe class="filelink-preview" src="'+escapeHtml(f.url)+'" loading="lazy"></iframe>' :
+          '<img class="filelink-preview-img" src="'+escapeHtml(f.url)+'" loading="lazy" alt="'+escapeHtml(label)+'">';
+      }
+      return '<div class="filelink-chip-wrap">'+
+        '<div class="filelink-chip" title="'+escapeHtml(label)+'">'+
+          '<span class="filelink-icon">📄</span>'+
+          nameEl+
+          previewBtn+
+          '<button class="icon-btn danger" data-action="del-filelink" data-collection="'+col+'" data-id="'+doc.id+'" data-item="'+f.id+'" title="삭제">✕</button>'+
+        '</div>'+
+        previewPanel+
       '</div>';
     }).join('');
     var uploadId = 'upload-'+col+'-'+doc.id;
@@ -504,9 +584,11 @@
     personalDeadlineOpen: {},
     manualActiveCat: MANUAL_CATS[0],
     manualActiveId: null,
+    manualActiveCadence: 'all',
     fileActiveCat: FILE_CATS[0],
     fileActiveId: null,
     taskHideCompleted: false,
+    filePreviewOpen: {},
     meetingActiveType: MEETING_TYPES[0],
     meetingActiveId: null,
     announcementActiveId: null,
@@ -617,7 +699,7 @@
       '</div>';
     }).join('');
     return '<div class="sidebar-card">'+
-      '<div class="sidebar-card-head"><span>📝 꼭 기억할 메모</span></div>'+
+      '<div class="sidebar-card-head"><span>📝 메모</span></div>'+
       (rows || '<div class="sidebar-empty">메모가 없습니다.</div>')+
       '<div class="pin-add-row">'+
         '<input type="text" id="pinQuickInput" placeholder="메모 입력 후 Enter">'+
@@ -868,13 +950,13 @@
 
     var headRow = '<tr>'+
       (showMajorCol ? '<th style="min-width:80px">분류</th>' : '')+
-      '<th style="min-width:220px">업무 (소분류 · 업무명)</th>'+
+      '<th style="min-width:280px">업무 (소분류 · 업무명)</th>'+
       '<th style="min-width:200px">내용</th>'+
       '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:190px">날짜'+sortArrow('date')+'</th>'+
-      '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:100px">담당자'+sortArrow('assignees')+'</th>'+
+      '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:85px">담당자'+sortArrow('assignees')+'</th>'+
       '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:100px">진행도'+sortArrow('status')+'</th>'+
-      '<th style="min-width:120px">비고</th>'+
-      '<th style="min-width:110px">첨부</th><th></th>'+
+      '<th style="min-width:70px">비고</th>'+
+      '<th style="min-width:70px">첨부</th><th></th>'+
     '</tr>';
 
     var tableHtml = sorted.length ?
@@ -911,10 +993,11 @@
     var curStatus = t.status||'시작 전';
     var sc = STATUS_COLORS[curStatus] || {fg:'#888',bg:'#eee'};
     var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
-    var peopleChecks = PEOPLE.map(function(p){
-      var checked = (t.assignees||[]).indexOf(p)>-1;
-      return '<label><input type="checkbox" data-action="toggle-person" data-collection="tasks" data-array-field="assignees" data-id="'+t.id+'" data-person="'+p+'"'+(checked?' checked':'')+'>'+p+'</label>';
-    }).join('');
+    var curAssignees = t.assignees || [];
+    var assigneeVal = curAssignees.length>=2 ? 'both' : (curAssignees[0] || '');
+    var assigneeOpts = '<option value="">미정</option>'+
+      PEOPLE.map(function(p){ return '<option value="'+p+'"'+(assigneeVal===p?' selected':'')+'>'+p+'</option>'; }).join('')+
+      '<option value="both"'+(assigneeVal==='both'?' selected':'')+'>지수·다경</option>';
     var showEnd = !!t.endDate || !!state.taskEndDateOpen[t.id];
     var dateHtml = '<input type="date" data-collection="tasks" data-id="'+t.id+'" data-field="date" value="'+escapeHtml(t.date||'')+'">'+
       (showEnd ?
@@ -929,7 +1012,7 @@
       '</div></td>'+
       '<td><textarea class="cell-textarea" placeholder="내용/메모" data-collection="tasks" data-id="'+t.id+'" data-field="content">'+escapeHtml(t.content||'')+'</textarea></td>'+
       '<td><div class="date-range">'+dateHtml+'</div></td>'+
-      '<td><div class="cell-check-group">'+peopleChecks+'</div></td>'+
+      '<td><select class="status-select-sm" data-collection="tasks" data-id="'+t.id+'" data-field="assigneesSelect">'+assigneeOpts+'</select></td>'+
       '<td><select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
       '<td><details class="filelink-details"><summary>📝'+((t.comments||[]).length?' '+t.comments.length:'')+'</summary>'+renderComments('tasks', t)+'</details></td>'+
       '<td><details class="filelink-details"><summary>📎'+(fileCount?' '+fileCount:'')+'</summary>'+renderFileLinks('tasks', t)+'</details></td>'+
@@ -958,7 +1041,7 @@
       '<div class="card-head"><h3>🙋 개별 업무리스트</h3><button class="btn" data-action="add-personal" data-owner="'+owner+'">+ 추가</button></div>'+
       '<div class="sheet-tab-bar">'+tabsHtml+'</div>'+
       (items.length ?
-        '<div class="table-scroll"><table><thead><tr><th style="min-width:110px">분류</th><th style="min-width:130px">이름</th><th style="min-width:220px">업무</th><th style="min-width:110px">진행도</th><th style="min-width:140px">시작</th><th style="min-width:150px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:150px">URL</th><th style="min-width:120px">연락처</th><th></th></tr></thead>'+
+        '<div class="table-scroll"><table><thead><tr><th style="min-width:90px">분류</th><th style="min-width:130px">이름</th><th style="min-width:220px">업무</th><th style="min-width:110px">진행도</th><th style="min-width:140px">시작</th><th style="min-width:150px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
         '<tbody>'+rows+'</tbody></table></div>'
         : '<div class="empty-state">등록된 업무가 없습니다. "+ 추가"를 눌러 지금 하고 있는 공부/업무를 기록해보세요.</div>')+
     '</div>';
@@ -974,6 +1057,7 @@
     var deadlineHtml = showDeadline ?
       '<input type="date" data-collection="personal" data-id="'+p.id+'" data-field="deadline" value="'+escapeHtml(p.deadline||'')+'">'
       : '<button type="button" class="btn ghost sm" data-action="show-personal-deadline" data-id="'+p.id+'">+ 마감일</button>';
+    var fileCount = (p.files||[]).length;
     return '<tr data-id="'+p.id+'">'+
       '<td><select class="tag-select" data-collection="personal" data-id="'+p.id+'" data-field="category" style="background:'+tc.bg+';color:'+tc.fg+';">'+catOpts+'</select></td>'+
       '<td><input type="text" class="cell-title-input" placeholder="이름" data-collection="personal" data-id="'+p.id+'" data-field="title" value="'+escapeHtml(p.title||'')+'"></td>'+
@@ -982,8 +1066,8 @@
       '<td><input type="date" data-collection="personal" data-id="'+p.id+'" data-field="startDate" value="'+escapeHtml(p.startDate||'')+'"></td>'+
       '<td>'+deadlineHtml+'</td>'+
       '<td style="text-align:center;"><input type="checkbox" data-collection="personal" data-id="'+p.id+'" data-field="followUp"'+(p.followUp?' checked':'')+'></td>'+
-      '<td><input type="text" class="cell-url-input" placeholder="URL" data-collection="personal" data-id="'+p.id+'" data-field="url" value="'+escapeHtml(p.url||'')+'"></td>'+
-      '<td><input type="text" placeholder="연락처" data-collection="personal" data-id="'+p.id+'" data-field="contact" value="'+escapeHtml(p.contact||'')+'"></td>'+
+      '<td><textarea class="cell-textarea" placeholder="비고" data-collection="personal" data-id="'+p.id+'" data-field="note">'+escapeHtml(p.note||'')+'</textarea></td>'+
+      '<td><details class="filelink-details"><summary>📎 '+(fileCount?fileCount+'개':'첨부')+'</summary>'+renderFileLinks('personal', p)+'</details></td>'+
       '<td><button class="icon-btn danger" data-action="del-row" data-collection="personal" data-id="'+p.id+'" title="삭제">✕</button></td>'+
     '</tr>';
   }
@@ -1097,7 +1181,7 @@
       '<th style="min-width:130px">날짜</th>'+
       '<th data-action="sort-comms" data-field="dept" class="sortable-th" style="min-width:120px">분류'+commSortArrow('dept')+'</th>'+
       '<th data-action="sort-comms" data-field="workCategory" class="sortable-th" style="min-width:140px">업무'+commSortArrow('workCategory')+'</th>'+
-      '<th style="min-width:110px">대상</th><th style="min-width:200px">소통내역</th><th style="min-width:100px">수신/발신</th>'+
+      '<th style="min-width:85px">대상</th><th style="min-width:200px">소통내역</th><th style="min-width:100px">수신/발신</th>'+
       '<th style="min-width:100px">전화번호</th><th style="min-width:100px">사람</th><th style="min-width:150px">비고</th><th>첨부</th><th></th></tr></thead>'+
       '<tbody>'+(rows||'')+'</tbody></table></div>'+
       (rows ? '' : '<div class="empty-state">등록된 소통 기록이 없습니다.</div>')+
@@ -1137,7 +1221,10 @@
       state.manualActiveId = null;
     }
     var activeCat = state.manualActiveCat || MANUAL_CATS[0];
+    var isAdmin = activeCat==='행정';
+    var activeCadence = state.manualActiveCadence || 'all';
     var items = state.manuals.filter(function(m){ return (m.category||MANUAL_CATS[0])===activeCat; })
+      .filter(function(m){ return !isAdmin || activeCadence==='all' || (m.cadence||'')===activeCadence; })
       .sort(function(a,b){ return (a.clientTs||0)-(b.clientTs||0); });
     var tabsHtml = MANUAL_CATS.map(function(cat){
       var cnt = state.manuals.filter(function(m){ return (m.category||MANUAL_CATS[0])===cat; }).length;
@@ -1146,20 +1233,36 @@
       var style = isActive ? 'background:'+cc.bg+';color:'+cc.fg+';border-color:'+cc.bg+';' : '';
       return '<button class="subtab-btn" data-action="manual-set-cat" data-cat="'+cat+'" style="'+style+'">'+cat+' <span class="subtab-count">'+cnt+'</span></button>';
     }).join('');
+    var cadenceBarHtml = '';
+    if(isAdmin){
+      var cadenceTabs = ['all'].concat(MANUAL_CADENCES).map(function(cad){
+        var label = cad==='all' ? '전체' : cad;
+        var cnt = cad==='all' ? state.manuals.filter(function(m){ return (m.category||MANUAL_CATS[0])==='행정'; }).length
+          : state.manuals.filter(function(m){ return (m.category||MANUAL_CATS[0])==='행정' && (m.cadence||'')===cad; }).length;
+        var cc = cad==='all' ? SHARED_COLOR : MANUAL_CADENCE_COLORS[cad];
+        var isActive = cad===activeCadence;
+        var style = isActive ? 'background:'+cc.bg+';color:'+cc.fg+';border-color:'+cc.bg+';' : '';
+        return '<button class="subtab-btn" data-action="manual-set-cadence" data-cadence="'+cad+'" style="'+style+'">'+label+' <span class="subtab-count">'+cnt+'</span></button>';
+      }).join('');
+      cadenceBarHtml = '<div class="subtab-bar" style="margin-top:6px;">'+cadenceTabs+'</div>';
+    }
     var rows = items.map(function(m){
       var fileCount = (m.files||[]).length;
+      var cadenceBadge = (isAdmin && m.cadence) ? badge(m.cadence, MANUAL_CADENCE_COLORS)+' ' : '';
       return '<tr class="board-row" data-action="open-manual" data-id="'+m.id+'">'+
-        '<td class="board-title-cell">'+escapeHtml(m.title||'(제목 없음)')+(fileCount?' <span class="manual-file-count">📎 '+fileCount+'</span>':'')+'</td>'+
+        '<td class="board-title-cell">'+cadenceBadge+escapeHtml(m.title||'(제목 없음)')+(fileCount?' <span class="manual-file-count">📎 '+fileCount+'</span>':'')+'</td>'+
         '<td class="task-content-preview" style="width:100px;">'+escapeHtml(m.createdBy||'')+'</td>'+
+        '<td class="task-content-preview" style="width:100px;">'+fmtTs(m.updatedAt||m.clientTs)+'</td>'+
       '</tr>';
     }).join('');
     var listHtml = items.length ?
-      '<table class="board-table"><thead><tr><th>제목</th><th style="width:100px">작성자</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      '<table class="board-table"><thead><tr><th>제목</th><th style="width:100px">작성자</th><th style="width:100px">수정일</th></tr></thead><tbody>'+rows+'</tbody></table>'
       : '<div class="empty-state">"'+activeCat+'" 분류에 등록된 매뉴얼이 없습니다.</div>';
     return '<div class="card">'+
       '<div class="card-head"><h3>📔 업무매뉴얼</h3><button class="btn" data-action="add-manual" data-cat="'+activeCat+'">+ 새 매뉴얼 작성</button></div>'+
       '<div class="subtab-bar">'+tabsHtml+'</div>'+
-      '<div class="table-hint">제목을 클릭하면 내용을 볼 수 있어요.</div>'+
+      cadenceBarHtml+
+      '<div class="table-hint">제목을 클릭하면 내용을 볼 수 있어요. 수정일은 최근에 내용을 바꾸거나 파일을 올린 날짜예요(버전 확인용).</div>'+
       listHtml+
     '</div>';
   }
@@ -1167,14 +1270,26 @@
     var cat = m.category || MANUAL_CATS[0];
     var mc = MANUAL_CAT_COLORS[cat] || {fg:'#888',bg:'#eee'};
     var catOpts = MANUAL_CATS.map(function(c){ return '<option value="'+c+'"'+(cat===c?' selected':'')+'>'+c+'</option>'; }).join('');
+    var cadenceSelect = '';
+    if(cat==='행정'){
+      var cad = m.cadence || '';
+      var cadc = MANUAL_CADENCE_COLORS[cad] || {fg:'#888',bg:'#eee'};
+      var cadOpts = '<option value="">주기 선택</option>'+MANUAL_CADENCES.map(function(c){ return '<option value="'+c+'"'+(cad===c?' selected':'')+'>'+c+'</option>'; }).join('');
+      cadenceSelect = '<select class="status-select-sm" data-collection="manuals" data-id="'+m.id+'" data-field="cadence" style="background:'+cadc.bg+';color:'+cadc.fg+';">'+cadOpts+'</select>';
+    }
+    var metaParts = [];
+    if(m.createdBy) metaParts.push(escapeHtml(m.createdBy));
+    metaParts.push('작성일 '+fmtTs(m.clientTs||m.createdAt));
+    if(m.updatedAt && m.updatedAt!==m.clientTs) metaParts.push('최근 수정 '+fmtTs(m.updatedAt));
     return '<div class="card">'+
       '<button class="btn ghost sm" data-action="close-manual">← 목록으로</button>'+
       '<div class="doc-item-head" style="margin-top:12px;">'+
         '<select class="status-select-sm" data-collection="manuals" data-id="'+m.id+'" data-field="category" style="background:'+mc.bg+';color:'+mc.fg+';">'+catOpts+'</select>'+
+        cadenceSelect+
         '<input type="text" class="doc-title-input" placeholder="매뉴얼 제목 (예: 중재 업무 매뉴얼)" data-collection="manuals" data-id="'+m.id+'" data-field="title" value="'+escapeHtml(m.title||'')+'">'+
         '<button class="icon-btn danger" data-action="del-manual-and-close" data-id="'+m.id+'" title="삭제">✕</button>'+
       '</div>'+
-      '<div class="note-meta">'+escapeHtml(m.createdBy||'')+'</div>'+
+      '<div class="note-meta">'+metaParts.join(' · ')+'</div>'+
       '<textarea class="doc-content-input manual-content" placeholder="업무 절차, 참고사항 등을 자유롭게 정리하세요" data-collection="manuals" data-id="'+m.id+'" data-field="content">'+escapeHtml(m.content||'')+'</textarea>'+
       renderFileLinks('manuals', m)+
     '</div>';
@@ -1231,12 +1346,51 @@
         '<span class="note-meta">'+escapeHtml(f.createdBy||'')+'</span>'+
       '</div>'+
       '<div class="filelinks">'+
-        (f.url ? '<div class="filelink-chip" title="'+escapeHtml(f.title||'')+'"><span class="filelink-icon">📄</span><span class="filelink-chip-name">'+escapeHtml(f.title||'파일')+'</span><a class="filelink-open" href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener">열기↗</a></div>' : '<div class="comments-empty">업로드된 파일이 없습니다.</div>')+
+        (f.url ? '<div class="filelink-chip" title="'+escapeHtml(f.title||'')+'"><span class="filelink-icon">📄</span><a class="filelink-chip-name" href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener">'+escapeHtml(f.title||'파일')+'</a></div>' : '<div class="comments-empty">업로드된 파일이 없습니다.</div>')+
+        (f.url && previewKind(f.title) === 'pdf' ? '<iframe class="filelink-preview" src="'+escapeHtml(f.url)+'" loading="lazy"></iframe>' : '')+
+        (f.url && previewKind(f.title) === 'image' ? '<img class="filelink-preview-img" src="'+escapeHtml(f.url)+'" loading="lazy" alt="'+escapeHtml(f.title||'')+'">' : '')+
         '<input type="file" class="filelink-upload-input hidden" id="'+uploadId+'" data-collection="files" data-id="'+f.id+'" data-single="1">'+
         '<button class="btn ghost sm" type="button" data-action="trigger-upload" data-target="'+uploadId+'">📤 '+(f.url?'파일 교체':'파일 업로드')+'</button>'+
       '</div>'+
     '</div>';
   }
+
+  /* ---------------- 표 안 첨부파일/비고 팝업 위치 계산 (뷰포트 기준 고정) ----------------
+     .table-scroll처럼 overflow:auto인 조상 안에 있으면 position:absolute는 스크롤 영역에 잘려서
+     이상하게 스크롤되는 문제가 있었어요. 그래서 position:fixed로 띄우고, 여기서 summary 버튼의
+     실제 화면 좌표를 계산해 top/left를 직접 지정합니다(화면 밖으로 나가지 않도록 보정 포함). */
+  function positionFloatingPanel(detailsEl){
+    var panel = detailsEl.querySelector('.filelinks, .comments-box');
+    var summary = detailsEl.querySelector('summary');
+    if(!panel || !summary) return;
+    var rect = summary.getBoundingClientRect();
+    var panelWidth = panel.offsetWidth || 250;
+    var panelHeight = panel.offsetHeight || 200;
+    var left = rect.right - panelWidth;
+    if(left < 8) left = 8;
+    var maxLeft = window.innerWidth - panelWidth - 8;
+    if(left > maxLeft) left = Math.max(8, maxLeft);
+    var top = rect.bottom + 4;
+    if(top + panelHeight > window.innerHeight - 8){
+      // 아래쪽 공간이 부족하면 버튼 위쪽에 띄웁니다.
+      top = rect.top - panelHeight - 4;
+      if(top < 8) top = 8;
+    }
+    panel.style.top = top+'px';
+    panel.style.left = left+'px';
+  }
+  function repositionAllOpenPanels(){
+    document.querySelectorAll('.filelink-details[open]').forEach(positionFloatingPanel);
+  }
+  // <details>의 toggle 이벤트는 버블링되지 않지만, 캡처 단계에서는 조상 리스너까지 전달되므로
+  // capture:true로 등록해서 어떤 첨부파일/비고 팝업이 열리든 한 곳에서 처리합니다.
+  document.addEventListener('toggle', function(e){
+    var d = e.target;
+    if(!d || d.tagName!=='DETAILS' || !d.classList.contains('filelink-details')) return;
+    if(d.open){ requestAnimationFrame(function(){ positionFloatingPanel(d); }); }
+  }, true);
+  window.addEventListener('scroll', repositionAllOpenPanels, true);
+  window.addEventListener('resize', repositionAllOpenPanels);
 
   /* ---------------- Event Delegation (appShell 전체 — 사이드바 포함) ---------------- */
   var mainEl = document.getElementById('appShell');
@@ -1254,7 +1408,7 @@
       });
     }
     else if(action==='add-task') addRow('tasks', { major:(state.taskActiveMajor==='전체'?MAJOR_CATS[0]:state.taskActiveMajor), minor:'', title:'', date:todayStr(), endDate:'', status:'시작 전', content:'', assignees:[], comments:[], files:[] });
-    else if(action==='add-personal') addRow('personal', { owner:el.dataset.owner, category:'', title:'', content:'', status:'시작 전', startDate:'', deadline:'', followUp:false, url:'', contact:'' });
+    else if(action==='add-personal') addRow('personal', { owner:el.dataset.owner, category:'', title:'', content:'', status:'시작 전', startDate:'', deadline:'', followUp:false, note:'', files:[] });
     else if(action==='add-meeting'){
       var mType = el.dataset.type || state.meetingActiveType || MEETING_TYPES[0];
       addRow('meetings', { meetingType:mType, title:'', date:todayStr(), time:'', attendees:PEOPLE.slice(), content:'', files:[] }, function(newId){
@@ -1266,7 +1420,7 @@
     else if(action==='add-comm') addRow('comms', { date:todayStr(), dept:COMM_DEPTS[0], workCategory:COMM_WORK_CATS[0], target:'', content:'', direction:COMM_DIRECTIONS[0], ext:'', participants:[], note:'', files:[] });
     else if(action==='add-manual'){
       var mCat = el.dataset.cat || state.manualActiveCat || MANUAL_CATS[0];
-      addRow('manuals', { category:mCat, title:'', content:'', files:[] }, function(newId){
+      addRow('manuals', { category:mCat, cadence:'', title:'', content:'', files:[] }, function(newId){
         state.manualActiveId = newId;
         renderActiveTab();
       });
@@ -1286,6 +1440,35 @@
     }
     else if(action==='del-row') delRow(col, id);
     else if(action==='del-filelink') delFileLink(col, id, el.dataset.item);
+    else if(action==='toggle-file-preview'){
+      // 전체 화면을 다시 그리면 열려 있던 첨부파일/비고 팝업(details)이 도로 닫혀버리기 때문에,
+      // 여기서는 미리보기 요소만 가볍게 추가/삭제합니다.
+      var pid = el.dataset.item;
+      var willOpen = !state.filePreviewOpen[pid];
+      state.filePreviewOpen[pid] = willOpen;
+      var wrap = el.closest('.filelink-chip-wrap');
+      if(wrap){
+        var existing = wrap.querySelector('.filelink-preview, .filelink-preview-img');
+        if(existing) existing.remove();
+        if(willOpen){
+          var panel;
+          if(el.dataset.kind==='pdf'){
+            panel = document.createElement('iframe');
+            panel.className = 'filelink-preview';
+          } else {
+            panel = document.createElement('img');
+            panel.className = 'filelink-preview-img';
+            panel.alt = '';
+          }
+          panel.src = el.dataset.url;
+          panel.loading = 'lazy';
+          wrap.appendChild(panel);
+        }
+      }
+      el.textContent = willOpen ? '🔽' : '👁';
+      var detailsAncestor = el.closest('.filelink-details');
+      if(detailsAncestor && detailsAncestor.open) requestAnimationFrame(function(){ positionFloatingPanel(detailsAncestor); });
+    }
     else if(action==='trigger-upload'){
       var fi = document.getElementById(el.dataset.target);
       if(fi) fi.click();
@@ -1301,7 +1484,8 @@
     else if(action==='show-task-enddate'){ state.taskEndDateOpen[el.dataset.id] = true; renderActiveTab(); }
     else if(action==='show-personal-deadline'){ state.personalDeadlineOpen[el.dataset.id] = true; renderActiveTab(); }
     else if(action==='personal-set-owner'){ state.personalActiveOwner = el.dataset.owner; renderActiveTab(); }
-    else if(action==='manual-set-cat'){ state.manualActiveCat = el.dataset.cat; renderActiveTab(); }
+    else if(action==='manual-set-cat'){ state.manualActiveCat = el.dataset.cat; state.manualActiveCadence = 'all'; renderActiveTab(); }
+    else if(action==='manual-set-cadence'){ state.manualActiveCadence = el.dataset.cadence; renderActiveTab(); }
     else if(action==='open-manual'){ state.manualActiveId = id; renderActiveTab(); }
     else if(action==='close-manual'){
       var mm = state.manuals.find(function(x){ return x.id===state.manualActiveId; });
@@ -1434,7 +1618,9 @@
   // 포커스가 빠져나가면 즉시 저장 확정 + 밀린 재렌더링 반영
   mainEl.addEventListener('focusout', function(e){
     var t = e.target;
-    if(t.dataset.field && t.dataset.collection && t.tagName!=='SELECT'){
+    // 체크박스는 change 이벤트에서 이미 t.checked(불리언)로 저장했으므로 여기서는 건드리지 않아요.
+    // (여기서 t.value를 쓰면 체크박스의 value는 항상 문자열 "on"이라 방금 저장한 "해제(false)"를 덮어써버리는 버그가 있었어요.)
+    if(t.dataset.field && t.dataset.collection && t.tagName!=='SELECT' && !(t.tagName==='INPUT' && t.type==='checkbox')){
       if(t.dataset.nested==='files'){
         flushSaveNestedNow(t.dataset.collection, t.dataset.id, 'files', t.dataset.item, t.dataset.field, t.value);
       } else {
@@ -1466,6 +1652,12 @@
       else { renderActiveTab(); }
       return;
     }
+    // 담당자 드롭다운(지수/다경/지수·다경)은 실제로는 tasks.assignees 배열 필드로 저장돼요.
+    if(t.dataset.field==='assigneesSelect'){
+      var arr = t.value==='both' ? PEOPLE.slice() : (t.value ? [t.value] : []);
+      flushSaveNow(t.dataset.collection, t.dataset.id, 'assignees', arr);
+      return;
+    }
     if(!t.dataset.field || !t.dataset.collection) return;
     var val = t.type==='checkbox' ? t.checked : t.value;
     flushSaveNow(t.dataset.collection, t.dataset.id, t.dataset.field, val);
@@ -1484,6 +1676,10 @@
     }
     if(t.dataset.field==='category' && t.dataset.collection==='manuals' && MANUAL_CAT_COLORS[val]){
       t.style.background = MANUAL_CAT_COLORS[val].bg; t.style.color = MANUAL_CAT_COLORS[val].fg;
+    }
+    if(t.dataset.field==='cadence' && t.dataset.collection==='manuals'){
+      var cadc2 = MANUAL_CADENCE_COLORS[val] || {fg:'#888',bg:'#eee'};
+      t.style.background = cadc2.bg; t.style.color = cadc2.fg;
     }
     if(t.dataset.field==='category' && t.dataset.collection==='files' && FILE_CAT_COLORS[val]){
       t.style.background = FILE_CAT_COLORS[val].bg; t.style.color = FILE_CAT_COLORS[val].fg;
