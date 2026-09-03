@@ -11,10 +11,11 @@
   var STATUSES = ['시작 전','진행 중','완료'];
   var STATUS_ORDER = { '진행 중':0, '시작 전':1, '완료':2 };
   var PEOPLE = ['지수','윤다경'];
-  var TASK_LOG_CATEGORIES = ['처방검토','중재(Intervention)','상담/교육','회의','데이터/통계','서류/행정','기타'];
-  var COMM_METHODS = ['전화','내선','방문','메신저','이메일','기타'];
+  var COMM_WORK_CATS = ['처방검토','중재(Intervention)','상담/교육','회의','데이터/통계','서류/행정','기타'];
+  var COMM_DIRECTIONS = ['발신','수신','양방향'];
   var IDEA_STATUSES = ['검토중','채택','보류'];
   var PERSONAL_STATUSES = ['대기','진행중','완료'];
+  var MANUAL_CATS = ['중재','TDM','행정','교육','시스템','개인 공부','기타'];
 
   var CAT_COLORS = {
     '교육':  { fg:'#7d7d7d', bg:'#efefef' },
@@ -38,10 +39,32 @@
   };
   var SHARED_COLOR = { fg:'#5b8def', bg:'#e8eefd' };
   var DDAY_COLOR = { fg:'#c98a2f', bg:'#fdf1e0' };
+  var DIRECTION_COLORS = {
+    '발신': { fg:'#3b7dd8', bg:'#e8f0fd' },
+    '수신': { fg:'#3fa15e', bg:'#e9f7ee' },
+    '양방향':{ fg:'#8f5fd6', bg:'#f2ecfb' }
+  };
+  var MANUAL_CAT_COLORS = {
+    '중재':   { fg:'#8f5fd6', bg:'#f2ecfb' },
+    'TDM':    { fg:'#3fa15e', bg:'#e9f7ee' },
+    '행정':   { fg:'#3b7dd8', bg:'#e8f0fd' },
+    '교육':   { fg:'#7d7d7d', bg:'#efefef' },
+    '시스템': { fg:'#d98a3d', bg:'#fdf1e4' },
+    '개인 공부': { fg:'#d6608a', bg:'#fbe9ef' },
+    '기타':   { fg:'#9a9a9a', bg:'#f0f0f0' }
+  };
   var BOARD_TO_TAB = {
     '공지사항':'announcements', '업무 리스트':'tasks', '각자 업무리스트':'personal',
-    '회의':'meetings', '아이디어':'ideas', '소통일지':'comms', '업무내용일지':'worklog', '자료실':'files'
+    '회의':'meetings', '아이디어':'ideas', '소통일지':'comms', '자료실':'files'
   };
+  // 자유 입력 텍스트(예: 소통일지 분류)에 고정 색상 팔레트가 없을 때, 글자 기반으로 일관된 파스텔 색을 만들어줍니다.
+  function hashColor(str){
+    str = str || '';
+    var hash = 0;
+    for(var i=0;i<str.length;i++){ hash = str.charCodeAt(i) + ((hash<<5)-hash); hash = hash & hash; }
+    var hue = Math.abs(hash) % 360;
+    return { fg:'hsl('+hue+',55%,38%)', bg:'hsl('+hue+',70%,94%)' };
+  }
 
   /* ---------------- Utilities ---------------- */
   function uid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
@@ -142,10 +165,10 @@
     setSyncStatus(false, '동기화 오류 (Firestore 보안 규칙을 확인하세요)');
   }
 
-  var COLLECTIONS = ['tasks','announcements','personal','meetings','ideas','comms','worklog','files','dday'];
-  var STATE_KEY = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', worklog:'worklog', files:'files', dday:'dday' };
+  var COLLECTIONS = ['tasks','announcements','personal','meetings','ideas','comms','manuals','files','dday'];
+  var STATE_KEY = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'dday' };
   // 캘린더 탭은 모든 컬렉션의 날짜를 모아 보여주므로, dday를 포함한 모든 컬렉션 변경이 캘린더도 함께 갱신시켜야 합니다.
-  var TAB_FOR_COLLECTION = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', worklog:'worklog', files:'files', dday:'calendar' };
+  var TAB_FOR_COLLECTION = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar' };
 
   function attachListeners(){
     COLLECTIONS.forEach(function(col){
@@ -206,13 +229,70 @@
     db.collection(col).doc(id).delete().catch(function(err){ showToast('삭제 실패: '+err.message); });
   }
 
+  /* ---------------- 중첩 배열 필드 (파일 링크 목록) 저장 헬퍼 ---------------- */
+  // 업무매뉴얼 / 소통일지의 "첨부 파일 링크" 목록처럼 문서 안에 배열로 들어있는 항목을 다룹니다.
+  function getNestedArray(col, docId, arrField){
+    var doc = (state[col]||[]).find(function(x){ return x.id===docId; });
+    return doc ? (doc[arrField]||[]).slice() : [];
+  }
+  function saveNestedArray(col, docId, arrField, arr){
+    if(!db) return;
+    var payload = {}; payload[arrField] = arr; payload.updatedAt = Date.now();
+    db.collection(col).doc(docId).update(payload).catch(function(err){ console.error(err); showToast('저장 실패: '+err.message); });
+  }
+  var nestedSaveTimers = {};
+  function scheduleSaveNested(col, docId, arrField, itemId, itemField, value){
+    var key = col+'|'+docId+'|'+arrField+'|'+itemId+'|'+itemField;
+    clearTimeout(nestedSaveTimers[key]);
+    nestedSaveTimers[key] = setTimeout(function(){ flushSaveNestedNow(col, docId, arrField, itemId, itemField, value); }, 500);
+  }
+  function flushSaveNestedNow(col, docId, arrField, itemId, itemField, value){
+    var key = col+'|'+docId+'|'+arrField+'|'+itemId+'|'+itemField;
+    clearTimeout(nestedSaveTimers[key]);
+    var arr = getNestedArray(col, docId, arrField);
+    var item = arr.find(function(x){ return x.id===itemId; });
+    if(!item) return;
+    item[itemField] = value;
+    saveNestedArray(col, docId, arrField, arr);
+  }
+  function addFileLink(col, docId){
+    if(!requireFirebase()) return;
+    var arr = getNestedArray(col, docId, 'files');
+    arr.push({ id:uid(), name:'', url:'' });
+    saveNestedArray(col, docId, 'files', arr);
+  }
+  function delFileLink(col, docId, itemId){
+    if(!requireFirebase()) return;
+    var arr = getNestedArray(col, docId, 'files').filter(function(x){ return x.id!==itemId; });
+    saveNestedArray(col, docId, 'files', arr);
+  }
+  function renderFileLinks(col, doc){
+    var files = doc.files || [];
+    var rows = files.map(function(f){
+      return '<div class="filelink-row">'+
+        '<input type="text" class="filelink-name" placeholder="이름" value="'+escapeHtml(f.name||'')+'" data-nested="files" data-collection="'+col+'" data-id="'+doc.id+'" data-item="'+f.id+'" data-field="name">'+
+        '<input type="text" class="filelink-url" placeholder="URL (구글드라이브 등)" value="'+escapeHtml(f.url||'')+'" data-nested="files" data-collection="'+col+'" data-id="'+doc.id+'" data-item="'+f.id+'" data-field="url">'+
+        (f.url ? '<a class="filelink-open" href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener">열기↗</a>' : '')+
+        '<button class="icon-btn danger" data-action="del-filelink" data-collection="'+col+'" data-id="'+doc.id+'" data-item="'+f.id+'" title="삭제">✕</button>'+
+      '</div>';
+    }).join('');
+    return '<div class="filelinks">'+
+      '<div class="filelinks-label">📎 첨부 파일 링크</div>'+
+      (rows || '')+
+      '<button class="btn ghost sm" data-action="add-filelink" data-collection="'+col+'" data-id="'+doc.id+'">+ 파일 링크 추가</button>'+
+    '</div>';
+  }
+
   /* ---------------- State ---------------- */
   var state = {
     activeTab:'announcements',
     who: localStorage.getItem('asp_share_who') || '',
-    tasks: [], announcements: [], personal: [], meetings: [], ideas: [], comms: [], worklog: [], files: [], dday: [],
+    tasks: [], announcements: [], personal: [], meetings: [], ideas: [], comms: [], manuals: [], files: [], dday: [],
     taskFilterPerson: 'all',
     taskFilterStatus: 'all',
+    taskCollapsed: {},
+    taskSortField: null, // null이면 기본 정렬(진행도→최신순), 아니면 헤더 클릭으로 선택한 필드
+    taskSortDir: 'asc',
     calMonth: (function(){ var d=new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1); })(),
     calSelectedDate: null,
     calFilter: 'all' // all | shared | 지수 | 윤다경
@@ -244,7 +324,7 @@
     else if(state.activeTab==='meetings') c.innerHTML = renderMeetingsTab();
     else if(state.activeTab==='ideas') c.innerHTML = renderIdeasTab();
     else if(state.activeTab==='comms') c.innerHTML = renderCommsTab();
-    else if(state.activeTab==='worklog') c.innerHTML = renderWorklogTab();
+    else if(state.activeTab==='manuals') c.innerHTML = renderManualsTab();
     else if(state.activeTab==='files') c.innerHTML = renderFilesTab();
     autoGrowAll();
   }
@@ -289,8 +369,7 @@
     state.meetings.forEach(function(m){ if(m.date) list.push({ id:m.id, collection:'meetings', board:'회의', date:m.date, title:m.title||'(제목 없음)', cls:{ type:'공동', owner:null } }); });
     state.ideas.forEach(function(i){ if(i.date) list.push({ id:i.id, collection:'ideas', board:'아이디어', date:i.date, title:i.title||'(제목 없음)', cls:{ type:'공동', owner:null } }); });
     state.announcements.forEach(function(a){ if(a.date) list.push({ id:a.id, collection:'announcements', board:'공지사항', date:a.date, title:a.title||'(제목 없음)', cls:{ type:'공동', owner:null } }); });
-    state.comms.forEach(function(c){ if(c.date) list.push({ id:c.id, collection:'comms', board:'소통일지', date:c.date, title:(c.name?c.name+' 소통':'소통 기록'), cls:{ type:'공동', owner:null } }); });
-    state.worklog.forEach(function(w){ if(w.date) list.push({ id:w.id, collection:'worklog', board:'업무내용일지', date:w.date, title:(w.category||'업무')+' 기록', cls:{ type:'공동', owner:null } }); });
+    state.comms.forEach(function(c){ if(c.date) list.push({ id:c.id, collection:'comms', board:'소통일지', date:c.date, title:(c.target?c.target+' 소통':'소통 기록'), cls:{ type:'공동', owner:null } }); });
     state.files.forEach(function(f){ if(f.date) list.push({ id:f.id, collection:'files', board:'자료실', date:f.date, title:f.title||'(제목 없음)', cls:{ type:'공동', owner:null } }); });
     state.dday.forEach(function(d){ if(d.date) list.push({ id:d.id, collection:'dday', board:'중요 일정', date:d.date, title:d.title||'(제목 없음)', cls:{ type:'중요', owner:null } }); });
     return list;
@@ -395,35 +474,73 @@
   }
 
   /* ================= 📋 업무 리스트 (공동, Notion 포맷) ================= */
+  var TASK_SORT_LABELS = { minor:'소분류', date:'날짜', status:'진행도', assignees:'담당자' };
+  function taskSortValue(t, field){
+    if(field==='minor') return MINOR_CATS.indexOf(t.minor); // -1(없음)이 먼저 오도록
+    if(field==='date') return t.date || '';
+    if(field==='status') return STATUS_ORDER[t.status]===undefined ? 9 : STATUS_ORDER[t.status];
+    if(field==='assignees') return (t.assignees||[]).slice().sort().join(',');
+    return '';
+  }
+  function sortTasks(items){
+    var field = state.taskSortField;
+    if(!field){
+      return items.slice().sort(function(a,b){
+        var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
+        if(so!==0) return so;
+        return (b.clientTs||0)-(a.clientTs||0);
+      });
+    }
+    var dir = state.taskSortDir==='desc' ? -1 : 1;
+    return items.slice().sort(function(a,b){
+      var av = taskSortValue(a, field), bv = taskSortValue(b, field);
+      if(av<bv) return -1*dir;
+      if(av>bv) return 1*dir;
+      return 0;
+    });
+  }
+  function sortArrow(field){
+    if(state.taskSortField!==field) return '';
+    return state.taskSortDir==='asc' ? ' ▲' : ' ▼';
+  }
+
   function renderTasksTab(){
     var filtered = state.tasks.filter(function(t){
       if(state.taskFilterPerson!=='all' && (t.assignees||[]).indexOf(state.taskFilterPerson)===-1) return false;
       if(state.taskFilterStatus!=='all' && t.status!==state.taskFilterStatus) return false;
       return true;
     });
+    var sorted = sortTasks(filtered);
+
+    var headRow = '<tr>'+
+      '<th style="width:24%">업무</th>'+
+      '<th style="width:16%">내용</th>'+
+      '<th data-action="sort-tasks" data-field="minor" class="sortable-th">소분류'+sortArrow('minor')+'</th>'+
+      '<th data-action="sort-tasks" data-field="date" class="sortable-th">날짜'+sortArrow('date')+'</th>'+
+      '<th data-action="sort-tasks" data-field="assignees" class="sortable-th">담당자'+sortArrow('assignees')+'</th>'+
+      '<th data-action="sort-tasks" data-field="status" class="sortable-th">진행도'+sortArrow('status')+'</th>'+
+      '<th>URL</th><th></th>'+
+    '</tr>';
+
+    function groupBlock(cat, items){
+      var collapsed = !!state.taskCollapsed[cat];
+      var head = '<div class="group-head clickable" data-action="toggle-group" data-cat="'+cat+'">'+
+          '<span class="group-arrow">'+(collapsed?'▶':'▼')+'</span>'+
+          badge(cat, CAT_COLORS)+'<span class="group-count">'+items.length+'건</span>'+
+        '</div>';
+      if(collapsed || !items.length) return '<div class="group">'+head+(items.length?'':'<div class="empty-state">등록된 업무가 없습니다.</div>')+'</div>';
+      return '<div class="group">'+head+
+        '<table><thead>'+headRow+'</thead><tbody>'+items.map(renderTaskRow).join('')+'</tbody></table>'+
+      '</div>';
+    }
 
     var groupsHtml = MAJOR_CATS.map(function(cat){
-      var items = filtered.filter(function(t){ return t.major===cat; })
-        .sort(function(a,b){
-          var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
-          if(so!==0) return so;
-          return (b.clientTs||0)-(a.clientTs||0);
-        });
-      if(!items.length) return '';
-      var rows = items.map(renderTaskRow).join('');
-      return '<div class="group">'+
-        '<div class="group-head">'+badge(cat, CAT_COLORS)+'<span class="group-count">'+items.length+'건</span></div>'+
-        '<table><thead><tr><th style="width:26%">업무 / 내용</th><th>소분류</th><th>날짜</th><th>담당자</th><th>진행도</th><th>URL</th><th></th></tr></thead>'+
-        '<tbody>'+rows+'</tbody></table>'+
-      '</div>';
+      var items = sorted.filter(function(t){ return t.major===cat; });
+      return items.length ? groupBlock(cat, items) : '';
     }).join('');
 
-    var uncategorized = filtered.filter(function(t){ return MAJOR_CATS.indexOf(t.major)===-1; });
-    if(uncategorized.length){
-      groupsHtml += '<div class="group"><div class="group-head">미분류<span class="group-count">'+uncategorized.length+'건</span></div>'+
-        '<table><thead><tr><th style="width:26%">업무 / 내용</th><th>소분류</th><th>날짜</th><th>담당자</th><th>진행도</th><th>URL</th><th></th></tr></thead>'+
-        '<tbody>'+uncategorized.map(renderTaskRow).join('')+'</tbody></table></div>';
-    }
+    var uncategorized = sorted.filter(function(t){ return MAJOR_CATS.indexOf(t.major)===-1; });
+    if(uncategorized.length) groupsHtml += groupBlock('미분류', uncategorized);
 
     if(!filtered.length) groupsHtml = '<div class="empty-state">등록된 업무가 없습니다. "+ 업무 추가"를 눌러 바로 입력해보세요.</div>';
 
@@ -439,6 +556,7 @@
           '<button class="btn" data-action="add-task">+ 업무 추가</button>'+
         '</div>'+
       '</div>'+
+      '<div class="table-hint">열 제목을 클릭하면 정렬, 그룹 제목을 클릭하면 접고 펼 수 있어요.</div>'+
       groupsHtml+
     '</div>';
   }
@@ -446,21 +564,26 @@
   function renderTaskRow(t){
     var majorOpts = MAJOR_CATS.map(function(c){ return '<option value="'+c+'"'+(t.major===c?' selected':'')+'>'+c+'</option>'; }).join('');
     var minorOpts = '<option value="">-</option>'+MINOR_CATS.map(function(c){ return '<option value="'+c+'"'+(t.minor===c?' selected':'')+'>'+c+'</option>'; }).join('');
-    var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+((t.status||'시작 전')===s?' selected':'')+'>'+s+'</option>'; }).join('');
+    var curStatus = t.status||'시작 전';
+    var sc = STATUS_COLORS[curStatus] || {fg:'#888',bg:'#eee'};
+    var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
     var peopleChecks = PEOPLE.map(function(p){
       var checked = (t.assignees||[]).indexOf(p)>-1;
-      return '<label><input type="checkbox" data-action="toggle-assignee" data-collection="tasks" data-id="'+t.id+'" data-person="'+p+'"'+(checked?' checked':'')+'>'+p+'</label>';
+      return '<label><input type="checkbox" data-action="toggle-person" data-collection="tasks" data-array-field="assignees" data-id="'+t.id+'" data-person="'+p+'"'+(checked?' checked':'')+'>'+p+'</label>';
     }).join('');
+    var dateRangeHtml = '<input type="date" data-collection="tasks" data-id="'+t.id+'" data-field="date" value="'+escapeHtml(t.date||'')+'">'+
+      '<span class="date-arrow">→</span>'+
+      '<input type="date" data-collection="tasks" data-id="'+t.id+'" data-field="endDate" value="'+escapeHtml(t.endDate||'')+'" title="종료일 (선택)">';
     return '<tr data-id="'+t.id+'">'+
       '<td>'+
-        '<select class="cell-select-inline" data-collection="tasks" data-id="'+t.id+'" data-field="major" style="margin-bottom:4px;">'+majorOpts+'</select>'+
+        '<select class="cell-select-inline" data-collection="tasks" data-id="'+t.id+'" data-field="major">'+majorOpts+'</select>'+
         '<input type="text" class="cell-title-input" placeholder="업무명" data-collection="tasks" data-id="'+t.id+'" data-field="title" value="'+escapeHtml(t.title||'')+'">'+
-        '<textarea class="cell-textarea" placeholder="내용/메모" data-collection="tasks" data-id="'+t.id+'" data-field="content">'+escapeHtml(t.content||'')+'</textarea>'+
       '</td>'+
+      '<td><textarea class="cell-textarea" placeholder="내용/메모" data-collection="tasks" data-id="'+t.id+'" data-field="content">'+escapeHtml(t.content||'')+'</textarea></td>'+
       '<td><select data-collection="tasks" data-id="'+t.id+'" data-field="minor">'+minorOpts+'</select></td>'+
-      '<td><input type="date" data-collection="tasks" data-id="'+t.id+'" data-field="date" value="'+escapeHtml(t.date||'')+'"></td>'+
+      '<td><div class="date-range">'+dateRangeHtml+'</div></td>'+
       '<td><div class="cell-check-group">'+peopleChecks+'</div></td>'+
-      '<td><select data-collection="tasks" data-id="'+t.id+'" data-field="status">'+statusOpts+'</select></td>'+
+      '<td><select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
       '<td><input type="text" class="cell-url-input" placeholder="URL" data-collection="tasks" data-id="'+t.id+'" data-field="url" value="'+escapeHtml(t.url||'')+'"></td>'+
       '<td><button class="icon-btn danger" data-action="del-row" data-collection="tasks" data-id="'+t.id+'" title="삭제">✕</button></td>'+
     '</tr>';
@@ -511,7 +634,7 @@
   function renderMeetingCard(m){
     var peopleChecks = PEOPLE.map(function(p){
       var checked = (m.attendees||[]).indexOf(p)>-1;
-      return '<label><input type="checkbox" data-action="toggle-attendee" data-collection="meetings" data-id="'+m.id+'" data-person="'+p+'"'+(checked?' checked':'')+'>'+p+'</label>';
+      return '<label><input type="checkbox" data-action="toggle-person" data-collection="meetings" data-array-field="attendees" data-id="'+m.id+'" data-person="'+p+'"'+(checked?' checked':'')+'>'+p+'</label>';
     }).join('');
     return '<div class="doc-item" data-id="'+m.id+'">'+
       '<div class="doc-item-head">'+
@@ -554,47 +677,63 @@
     var rows = items.map(renderCommRow).join('');
     return '<div class="card">'+
       '<div class="card-head"><h3>💬 소통일지</h3><button class="btn" data-action="add-comm">+ 새 소통 기록</button></div>'+
-      '<table><thead><tr><th>날짜</th><th>시간</th><th>상대방</th><th>소속/부서</th><th>내선번호</th><th>방법</th><th>내용</th><th>작성자</th><th></th></tr></thead>'+
+      '<table><thead><tr><th>날짜</th><th>분류</th><th>업무</th><th>대상</th><th>소통내역</th><th>수신/발신</th><th>전화번호</th><th>사람</th><th>비고</th><th>첨부</th><th></th></tr></thead>'+
       '<tbody>'+(rows||'')+'</tbody></table>'+
       (rows ? '' : '<div class="empty-state">등록된 소통 기록이 없습니다.</div>')+
     '</div>';
   }
   function renderCommRow(c){
-    var opts = COMM_METHODS.map(function(m){ return '<option value="'+m+'"'+(c.method===m?' selected':'')+'>'+m+'</option>'; }).join('');
+    var workOpts = COMM_WORK_CATS.map(function(m){ return '<option value="'+m+'"'+(c.workCategory===m?' selected':'')+'>'+m+'</option>'; }).join('');
+    var dirOpts = COMM_DIRECTIONS.map(function(m){ return '<option value="'+m+'"'+(c.direction===m?' selected':'')+'>'+m+'</option>'; }).join('');
+    var dc = hashColor(c.dept||'');
+    var dirColor = DIRECTION_COLORS[c.direction] || {fg:'#888',bg:'#eee'};
+    var peopleChecks = PEOPLE.map(function(p){
+      var checked = (c.participants||[]).indexOf(p)>-1;
+      return '<label><input type="checkbox" data-action="toggle-person" data-collection="comms" data-array-field="participants" data-id="'+c.id+'" data-person="'+p+'"'+(checked?' checked':'')+'>'+p+'</label>';
+    }).join('');
+    var fileCount = (c.files||[]).length;
     return '<tr data-id="'+c.id+'">'+
       '<td><input type="date" data-collection="comms" data-id="'+c.id+'" data-field="date" value="'+escapeHtml(c.date||todayStr())+'"></td>'+
-      '<td><input type="time" data-collection="comms" data-id="'+c.id+'" data-field="time" value="'+escapeHtml(c.time||'')+'"></td>'+
-      '<td><input type="text" placeholder="성함/직함" data-collection="comms" data-id="'+c.id+'" data-field="name" value="'+escapeHtml(c.name||'')+'"></td>'+
-      '<td><input type="text" placeholder="소속/부서" data-collection="comms" data-id="'+c.id+'" data-field="dept" value="'+escapeHtml(c.dept||'')+'"></td>'+
-      '<td><input type="text" placeholder="내선번호" data-collection="comms" data-id="'+c.id+'" data-field="ext" value="'+escapeHtml(c.ext||'')+'"></td>'+
-      '<td><select data-collection="comms" data-id="'+c.id+'" data-field="method">'+opts+'</select></td>'+
+      '<td><input type="text" class="tag-input" placeholder="예: 간호팀" data-collection="comms" data-id="'+c.id+'" data-field="dept" value="'+escapeHtml(c.dept||'')+'" style="background:'+dc.bg+';color:'+dc.fg+';"></td>'+
+      '<td><select data-collection="comms" data-id="'+c.id+'" data-field="workCategory">'+workOpts+'</select></td>'+
+      '<td><input type="text" placeholder="상대방/부서" data-collection="comms" data-id="'+c.id+'" data-field="target" value="'+escapeHtml(c.target||'')+'"></td>'+
       '<td><textarea data-collection="comms" data-id="'+c.id+'" data-field="content" rows="1" placeholder="소통 내용 / 협의사항">'+escapeHtml(c.content||'')+'</textarea></td>'+
-      '<td class="task-content-preview">'+escapeHtml(c.createdBy||'')+'</td>'+
+      '<td><select data-collection="comms" data-id="'+c.id+'" data-field="direction" style="background:'+dirColor.bg+';color:'+dirColor.fg+';">'+dirOpts+'</select></td>'+
+      '<td><input type="text" placeholder="내선/전화" data-collection="comms" data-id="'+c.id+'" data-field="ext" value="'+escapeHtml(c.ext||'')+'"></td>'+
+      '<td><div class="cell-check-group">'+peopleChecks+'</div></td>'+
+      '<td><textarea data-collection="comms" data-id="'+c.id+'" data-field="note" rows="1" placeholder="비고">'+escapeHtml(c.note||'')+'</textarea></td>'+
+      '<td><details class="filelink-details"><summary>📎 '+(fileCount?fileCount+'개':'첨부')+'</summary>'+renderFileLinks('comms', c)+'</details></td>'+
       '<td><button class="icon-btn danger" data-action="del-row" data-collection="comms" data-id="'+c.id+'" title="삭제">✕</button></td>'+
     '</tr>';
   }
 
-  /* ================= 📔 업무내용일지 ================= */
-  function renderWorklogTab(){
-    var items = state.worklog.slice().sort(function(a,b){ return (b.clientTs||0)-(a.clientTs||0); });
-    var rows = items.map(renderWorklogRow).join('');
+  /* ================= 📔 업무매뉴얼 ================= */
+  function renderManualsTab(){
+    var items = state.manuals.slice().sort(function(a,b){
+      var ao = MANUAL_CATS.indexOf(a.category), bo = MANUAL_CATS.indexOf(b.category);
+      if(ao!==bo) return ao-bo;
+      return (a.clientTs||0)-(b.clientTs||0);
+    });
+    var listHtml = items.length ? items.map(renderManualItem).join('') : '<div class="empty-state">등록된 업무매뉴얼이 없습니다. 중재·TDM·행정 등 업무별 매뉴얼이나 공부 자료를 정리해보세요.</div>';
     return '<div class="card">'+
-      '<div class="card-head"><h3>📔 업무내용일지</h3><button class="btn" data-action="add-worklog">+ 새 업무 기록</button></div>'+
-      '<table><thead><tr><th>날짜</th><th>시간</th><th>분류</th><th>내용</th><th>작성자</th><th></th></tr></thead>'+
-      '<tbody>'+(rows||'')+'</tbody></table>'+
-      (rows ? '' : '<div class="empty-state">등록된 업무 기록이 없습니다.</div>')+
+      '<div class="card-head"><h3>📔 업무매뉴얼</h3><button class="btn" data-action="add-manual">+ 새 매뉴얼 작성</button></div>'+
+      listHtml+
     '</div>';
   }
-  function renderWorklogRow(w){
-    var opts = TASK_LOG_CATEGORIES.map(function(c){ return '<option value="'+c+'"'+(w.category===c?' selected':'')+'>'+c+'</option>'; }).join('');
-    return '<tr data-id="'+w.id+'">'+
-      '<td><input type="date" data-collection="worklog" data-id="'+w.id+'" data-field="date" value="'+escapeHtml(w.date||todayStr())+'"></td>'+
-      '<td><input type="time" data-collection="worklog" data-id="'+w.id+'" data-field="time" value="'+escapeHtml(w.time||'')+'"></td>'+
-      '<td><select data-collection="worklog" data-id="'+w.id+'" data-field="category">'+opts+'</select></td>'+
-      '<td><textarea data-collection="worklog" data-id="'+w.id+'" data-field="content" rows="1" placeholder="수행한 업무 내용">'+escapeHtml(w.content||'')+'</textarea></td>'+
-      '<td class="task-content-preview">'+escapeHtml(w.createdBy||'')+'</td>'+
-      '<td><button class="icon-btn danger" data-action="del-row" data-collection="worklog" data-id="'+w.id+'" title="삭제">✕</button></td>'+
-    '</tr>';
+  function renderManualItem(m){
+    var cat = m.category || MANUAL_CATS[0];
+    var mc = MANUAL_CAT_COLORS[cat] || {fg:'#888',bg:'#eee'};
+    var catOpts = MANUAL_CATS.map(function(c){ return '<option value="'+c+'"'+(cat===c?' selected':'')+'>'+c+'</option>'; }).join('');
+    return '<div class="doc-item manual-item" data-id="'+m.id+'">'+
+      '<div class="doc-item-head">'+
+        '<select class="status-select-sm" data-collection="manuals" data-id="'+m.id+'" data-field="category" style="background:'+mc.bg+';color:'+mc.fg+';">'+catOpts+'</select>'+
+        '<input type="text" class="doc-title-input" placeholder="매뉴얼 제목 (예: 중재 업무 매뉴얼)" data-collection="manuals" data-id="'+m.id+'" data-field="title" value="'+escapeHtml(m.title||'')+'">'+
+        '<button class="icon-btn danger" data-action="del-row" data-collection="manuals" data-id="'+m.id+'" title="삭제">✕</button>'+
+      '</div>'+
+      '<div class="note-meta">'+escapeHtml(m.createdBy||'')+'</div>'+
+      '<textarea class="doc-content-input manual-content" placeholder="업무 절차, 참고사항 등을 자유롭게 정리하세요" data-collection="manuals" data-id="'+m.id+'" data-field="content">'+escapeHtml(m.content||'')+'</textarea>'+
+      renderFileLinks('manuals', m)+
+    '</div>';
   }
 
   /* ================= 🗂 자료실 ================= */
@@ -630,15 +769,40 @@
     var col = el.dataset.collection, id = el.dataset.id;
 
     if(action==='add-announcement') addRow('announcements', { title:'', content:'', date:todayStr() });
-    else if(action==='add-task') addRow('tasks', { major:MAJOR_CATS[0], minor:'', title:'', date:todayStr(), status:'시작 전', content:'', url:'', assignees:[] });
+    else if(action==='add-task') addRow('tasks', { major:MAJOR_CATS[0], minor:'', title:'', date:todayStr(), endDate:'', status:'시작 전', content:'', url:'', assignees:[] });
     else if(action==='add-personal') addRow('personal', { owner:el.dataset.owner, title:'', status:'대기', deadline:'' });
     else if(action==='add-meeting') addRow('meetings', { title:'', date:todayStr(), attendees:[], content:'' });
     else if(action==='add-idea') addRow('ideas', { title:'', content:'', status:'검토중', date:todayStr() });
-    else if(action==='add-comm') addRow('comms', { date:todayStr(), time:'', name:'', dept:'', ext:'', method:COMM_METHODS[0], content:'' });
-    else if(action==='add-worklog') addRow('worklog', { date:todayStr(), time:'', category:TASK_LOG_CATEGORIES[0], content:'' });
+    else if(action==='add-comm') addRow('comms', { date:todayStr(), dept:'', workCategory:COMM_WORK_CATS[0], target:'', content:'', direction:COMM_DIRECTIONS[0], ext:'', participants:[], note:'', files:[] });
+    else if(action==='add-manual') addRow('manuals', { category:MANUAL_CATS[0], title:'', content:'', files:[] });
     else if(action==='add-file') addRow('files', { title:'', url:'', category:'', date:todayStr() });
     else if(action==='add-dday') addRow('dday', { title:'', date:todayStr() });
     else if(action==='del-row') delRow(col, id);
+    else if(action==='add-filelink') addFileLink(col, id);
+    else if(action==='del-filelink') delFileLink(col, id, el.dataset.item);
+    else if(action==='toggle-group'){
+      var cat = el.dataset.cat;
+      state.taskCollapsed[cat] = !state.taskCollapsed[cat];
+      renderActiveTab();
+    }
+    else if(action==='sort-tasks'){
+      var f = el.dataset.field;
+      if(state.taskSortField===f){ state.taskSortDir = state.taskSortDir==='asc' ? 'desc' : 'asc'; }
+      else { state.taskSortField = f; state.taskSortDir = 'asc'; }
+      renderActiveTab();
+    }
+    else if(action==='toggle-person'){
+      if(!requireFirebase()) return;
+      var arrField = el.dataset.arrayField;
+      var doc = (state[col]||[]).find(function(x){ return x.id===id; });
+      if(!doc) return;
+      var arr = (doc[arrField]||[]).slice();
+      var person = el.dataset.person;
+      var idx = arr.indexOf(person);
+      if(idx>-1) arr.splice(idx,1); else arr.push(person);
+      var payload = {}; payload[arrField] = arr; payload.updatedAt = Date.now();
+      db.collection(col).doc(id).update(payload).catch(function(err){ showToast('저장 실패: '+err.message); });
+    }
     else if(action==='select-cal-date'){
       state.calSelectedDate = (state.calSelectedDate===el.dataset.date) ? null : el.dataset.date;
       renderActiveTab();
@@ -663,34 +827,22 @@
       state.calSelectedDate = todayStr();
       renderActiveTab();
     }
-    else if(action==='toggle-assignee'){
-      if(!requireFirebase()) return;
-      var task = state.tasks.find(function(x){ return x.id===id; });
-      if(!task) return;
-      var arr = (task.assignees||[]).slice();
-      var person = el.dataset.person;
-      var idx = arr.indexOf(person);
-      if(idx>-1) arr.splice(idx,1); else arr.push(person);
-      db.collection('tasks').doc(id).update({ assignees:arr, updatedAt:Date.now() }).catch(function(err){ showToast('저장 실패: '+err.message); });
-    }
-    else if(action==='toggle-attendee'){
-      if(!requireFirebase()) return;
-      var meeting = state.meetings.find(function(x){ return x.id===id; });
-      if(!meeting) return;
-      var arr2 = (meeting.attendees||[]).slice();
-      var person2 = el.dataset.person;
-      var idx2 = arr2.indexOf(person2);
-      if(idx2>-1) arr2.splice(idx2,1); else arr2.push(person2);
-      db.collection('meetings').doc(id).update({ attendees:arr2, updatedAt:Date.now() }).catch(function(err){ showToast('저장 실패: '+err.message); });
-    }
   });
 
-  // 텍스트 입력: 타이핑 중엔 디바운스 저장 (+ textarea 자동 높이)
+  // 텍스트 입력: 타이핑 중엔 디바운스 저장 (+ textarea 자동 높이 + 태그 색상 미리보기)
   mainEl.addEventListener('input', function(e){
     var t = e.target;
     if(!t.dataset.field || !t.dataset.collection) return;
     if(t.tagName==='TEXTAREA') autoGrow(t);
     if(t.tagName==='INPUT' && t.type==='checkbox') return; // change 이벤트에서 처리
+    if(t.classList.contains('tag-input')){
+      var c = hashColor(t.value);
+      t.style.background = c.bg; t.style.color = c.fg;
+    }
+    if(t.dataset.nested==='files'){
+      scheduleSaveNested(t.dataset.collection, t.dataset.id, 'files', t.dataset.item, t.dataset.field, t.value);
+      return;
+    }
     scheduleSave(t.dataset.collection, t.dataset.id, t.dataset.field, t.value);
   });
 
@@ -698,7 +850,11 @@
   mainEl.addEventListener('focusout', function(e){
     var t = e.target;
     if(t.dataset.field && t.dataset.collection && t.tagName!=='SELECT'){
-      flushSaveNow(t.dataset.collection, t.dataset.id, t.dataset.field, t.value);
+      if(t.dataset.nested==='files'){
+        flushSaveNestedNow(t.dataset.collection, t.dataset.id, 'files', t.dataset.item, t.dataset.field, t.value);
+      } else {
+        flushSaveNow(t.dataset.collection, t.dataset.id, t.dataset.field, t.value);
+      }
     }
     if(pendingRerender){ pendingRerender=false; renderActiveTab(); }
   });
@@ -712,6 +868,15 @@
     if(!t.dataset.field || !t.dataset.collection) return;
     var val = t.type==='checkbox' ? t.checked : t.value;
     flushSaveNow(t.dataset.collection, t.dataset.id, t.dataset.field, val);
+    if(t.dataset.field==='status' && STATUS_COLORS[val]){
+      t.style.background = STATUS_COLORS[val].bg; t.style.color = STATUS_COLORS[val].fg;
+    }
+    if(t.dataset.field==='direction' && DIRECTION_COLORS[val]){
+      t.style.background = DIRECTION_COLORS[val].bg; t.style.color = DIRECTION_COLORS[val].fg;
+    }
+    if(t.dataset.field==='category' && MANUAL_CAT_COLORS[val]){
+      t.style.background = MANUAL_CAT_COLORS[val].bg; t.style.color = MANUAL_CAT_COLORS[val].fg;
+    }
   });
 
   /* ---------------- Init ---------------- */
