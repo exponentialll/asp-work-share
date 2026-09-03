@@ -342,22 +342,20 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
   .sidebar{width:100%;position:static;flex-direction:row;flex-wrap:wrap;}
   .sidebar-card{flex:1;min-width:220px;}
 }
+
 /* 소통일지 전용 셀 스타일 조정 */
-/* 1. 분류 (드롭다운 너비 축소) */
 td select[data-collection="comms"][data-field="dept"] {
   width: 95px !important;
   padding: 5px 14px 5px 6px !important;
   font-size: 12px;
 }
 
-/* 2. 업무 (드롭다운 너비 축소) */
 td select[data-collection="comms"][data-field="workCategory"] {
   width: 90px !important;
   padding: 5px 14px 5px 6px !important;
   font-size: 12px;
 }
 
-/* 3. 대상 (입력창 너비 확장 - 기존 52px에서 110px로 늘림) */
 .comm-narrow-input[data-field="target"] {
   width: 110px !important;
 }
