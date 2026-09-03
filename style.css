@@ -345,13 +345,13 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
 
 /* 소통일지 전용 셀 스타일 조정 */
 td select[data-collection="comms"][data-field="dept"] {
-  width: 97px !important;
+  width: 110px !important;
   padding: 5px 14px 5px 6px !important;
   font-size: 12px;
 }
 
 td select[data-collection="comms"][data-field="workCategory"] {
-  width: 92px !important;
+  width: 110px !important;
   padding: 5px 14px 5px 6px !important;
   font-size: 12px;
 }
