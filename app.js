@@ -10,7 +10,8 @@
   var MINOR_CATS = ['일간','주간','격주','월별','분기','반기','연간','필수','비정기'];
   // 행정 업무는 대부분 정기 보고 성격이라, 소분류 선택지를 주기 흐름 순서(월별→분기→반기→연간→비정기)로 좁혀서 보여줘요.
   var ADMIN_MINOR_CATS = ['월별','분기','반기','연간','비정기'];
-  var STATUSES = ['시작 전','진행 중','완료'];
+  // 드롭다운에서 위에서부터 보이는 순서예요. 실제 정렬 우선순위는 STATUS_ORDER를 따로 씁니다.
+  var STATUSES = ['진행 중','시작 전','완료'];
   var STATUS_ORDER = { '진행 중':0, '시작 전':1, '완료':2 };
   var PEOPLE = ['지수','다경'];
   var COMM_WORK_CATS = ['처방검토','중재(Intervention)','TDM','상담/교육','회의','데이터/통계','서류/행정','인사','기타'];
@@ -141,6 +142,24 @@
   }
   function pad2(n){ return n<10 ? '0'+n : ''+n; }
   function todayStr(){ var d=new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate()); }
+  // 표 안 날짜 칸이 너무 넓어 보여서, 화면엔 "26-09-14"처럼 연도 앞 두 자리를 뺀 짧은 표기로 보여줘요.
+  // 실제 저장되는 값은 그대로 "2026-09-14" 전체 형식이라 정렬/계산에는 영향이 없어요.
+  function shortDate(d){
+    return (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) ? d.slice(2) : (d||'');
+  }
+  // 네이티브 <input type="date">는 폭을 줄여도 브라우저가 연도까지 표시할 자리를 그대로 차지해서
+  // 표 칸을 좁히는 데 한계가 있어요. 그래서 화면엔 짧은 날짜 글자가 적힌 작은 버튼만 보여주고,
+  // 버튼을 누르면 화면 밖에 숨겨둔 진짜 날짜 입력칸의 달력을 열어서(showPicker) 고르게 했어요.
+  // 저장은 그 숨은 input이 기존과 똑같은 data-collection/data-id/data-field를 그대로 갖고 있어서
+  // 자동으로 처리됩니다.
+  function renderCompactDateField(col, id, field, value, placeholder){
+    var domId = 'datefield-'+col+'-'+id+'-'+field;
+    var label = value ? shortDate(value) : (placeholder || '+ 날짜');
+    return '<span class="date-compact-wrap">'+
+      '<button type="button" class="date-compact-btn'+(value?'':' empty')+'" data-action="open-date-picker" data-target="'+domId+'" title="'+escapeHtml(value||'')+'">'+escapeHtml(label)+'</button>'+
+      '<input type="date" id="'+domId+'" class="date-hidden-input" data-collection="'+col+'" data-id="'+id+'" data-field="'+field+'" value="'+escapeHtml(value||'')+'">'+
+    '</span>';
+  }
   function badge(label, colorMap, extraStyle){
     var c = (colorMap && colorMap[label]) || { fg:'#888', bg:'#eee' };
     return '<span class="badge" style="color:'+c.fg+';background:'+c.bg+(extraStyle||'')+'">'+escapeHtml(label)+'</span>';
@@ -812,7 +831,6 @@
       : '<div class="empty-state">등록된 공지사항이 없습니다.</div>';
     return '<div class="card">'+
       '<div class="card-head"><h3>📢 공지사항</h3><button class="btn" data-action="add-announcement">+ 새 공지 추가</button></div>'+
-      '<div class="table-hint">제목을 클릭하면 내용을 볼 수 있어요.</div>'+
       listHtml+
     '</div>';
   }
@@ -983,8 +1001,7 @@
       '</div>';
     }).join('');
     var total = state.recurring.length;
-    return '<div class="recur-panel-head"><span class="recur-progress">'+doneCount+' / '+total+' 완료</span>'+
-      '<span class="table-hint" style="margin:0;">주기가 바뀌면(다음날/다음주/다음달 등) 자동으로 다시 "대기" 상태가 돼요.</span></div>'+
+    return '<div class="recur-panel-head"><span class="recur-progress">'+doneCount+' / '+total+' 완료</span></div>'+
       groups;
   }
 
@@ -1054,8 +1071,8 @@
     var headRow = '<tr>'+
       (showMajorCol ? '<th style="min-width:56px">분류</th>' : '')+
       '<th data-action="sort-tasks" data-field="minor" class="sortable-th" style="min-width:280px">업무 (소분류 · 업무명)'+sortArrow('minor')+'</th>'+
-      '<th style="min-width:200px">내용</th>'+
-      '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:190px">날짜'+sortArrow('date')+'</th>'+
+      '<th style="min-width:260px">내용</th>'+
+      '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:110px">날짜'+sortArrow('date')+'</th>'+
       '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:85px">담당자'+sortArrow('assignees')+'</th>'+
       '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:100px">진행도'+sortArrow('status')+'</th>'+
       '<th style="min-width:70px">비고</th>'+
@@ -1084,7 +1101,6 @@
       '</div>'+
       recurringPanel+
       '<div class="subtab-bar">'+tabsHtml+'</div>'+
-      '<div class="table-hint">열 제목을 클릭하면 정렬돼요. 소분류 배지를 눌러 주기를 바꿀 수 있어요.</div>'+
       tableHtml+
     '</div>';
   }
@@ -1108,9 +1124,9 @@
       PEOPLE.map(function(p){ return '<option value="'+p+'"'+(assigneeVal===p?' selected':'')+'>'+p+'</option>'; }).join('')+
       '<option value="both"'+(assigneeVal==='both'?' selected':'')+'>지수·다경</option>';
     var showEnd = !!t.endDate || !!state.taskEndDateOpen[t.id];
-    var dateHtml = '<input type="date" data-collection="tasks" data-id="'+t.id+'" data-field="date" value="'+escapeHtml(t.date||'')+'">'+
+    var dateHtml = renderCompactDateField('tasks', t.id, 'date', t.date, '+ 날짜')+
       (showEnd ?
-        '<span class="date-arrow">→</span><input type="date" data-collection="tasks" data-id="'+t.id+'" data-field="endDate" value="'+escapeHtml(t.endDate||'')+'" title="마감일">'
+        '<span class="date-arrow">→</span>'+renderCompactDateField('tasks', t.id, 'endDate', t.endDate, '마감일')
         : '<button type="button" class="btn ghost sm" data-action="show-task-enddate" data-id="'+t.id+'">+ 마감일</button>');
     var fileCount = (t.files||[]).length;
     return '<tr data-id="'+t.id+'">'+
@@ -1165,9 +1181,8 @@
         '</div>'+
       '</div>'+
       '<div class="sheet-tab-bar">'+tabsHtml+'</div>'+
-      '<div class="table-hint">"분류" 열 제목을 누르면 같은 분류끼리 모아서 볼 수 있어요.</div>'+
       (items.length ?
-        '<div class="table-scroll"><table><thead><tr><th data-action="sort-personal-cat" class="sortable-th" style="min-width:64px">'+catThLabel+'</th><th style="min-width:130px">이름</th><th style="min-width:220px">업무</th><th style="min-width:110px">진행도</th><th style="min-width:140px">시작</th><th style="min-width:150px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
+        '<div class="table-scroll"><table><thead><tr><th data-action="sort-personal-cat" class="sortable-th" style="min-width:92px">'+catThLabel+'</th><th style="min-width:130px">이름</th><th style="min-width:220px">업무</th><th style="min-width:110px">진행도</th><th style="min-width:140px">시작</th><th style="min-width:150px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
         '<tbody>'+rows+'</tbody></table></div>'
         : '<div class="empty-state">등록된 업무가 없습니다. "+ 추가"를 눌러 지금 하고 있는 공부/업무를 기록해보세요.</div>')+
     '</div>';
@@ -1229,7 +1244,6 @@
     return '<div class="card">'+
       '<div class="card-head"><h3>🗓 회의</h3><button class="btn" data-action="add-meeting" data-type="'+activeType+'">+ 새 회의 기록</button></div>'+
       '<div class="subtab-bar">'+tabsHtml+'</div>'+
-      '<div class="table-hint">제목을 클릭하면 회의 내용을 볼 수 있어요. 매주 금요일 오후 4시 주간회의는 자동으로 만들어져요.</div>'+
       listHtml+
     '</div>';
   }
@@ -1307,8 +1321,8 @@
       '<th style="min-width:130px">날짜</th>'+
       '<th data-action="sort-comms" data-field="dept" class="sortable-th" style="min-width:120px">분류'+commSortArrow('dept')+'</th>'+
       '<th data-action="sort-comms" data-field="workCategory" class="sortable-th" style="min-width:140px">업무'+commSortArrow('workCategory')+'</th>'+
-      '<th style="min-width:60px">대상</th><th style="min-width:150px">소통내역</th><th style="min-width:80px">수신/발신</th>'+
-      '<th style="min-width:64px">전화번호</th><th style="min-width:100px">사람</th><th style="min-width:150px">비고</th><th>첨부</th><th></th></tr></thead>'+
+      '<th style="min-width:44px">대상</th><th style="min-width:240px">소통내역</th><th style="min-width:80px">수신/발신</th>'+
+      '<th style="min-width:48px">전화번호</th><th style="min-width:100px">사람</th><th style="min-width:150px">비고</th><th>첨부</th><th></th></tr></thead>'+
       '<tbody>'+(rows||'')+'</tbody></table></div>'+
       (rows ? '' : '<div class="empty-state">등록된 소통 기록이 없습니다.</div>')+
     '</div>';
@@ -1388,7 +1402,6 @@
       '<div class="card-head"><h3>📔 업무매뉴얼</h3><button class="btn" data-action="add-manual" data-cat="'+activeCat+'">+ 새 매뉴얼 작성</button></div>'+
       '<div class="subtab-bar">'+tabsHtml+'</div>'+
       cadenceBarHtml+
-      '<div class="table-hint">제목을 클릭하면 내용을 볼 수 있어요. 수정일은 최근에 내용을 바꾸거나 파일을 올린 날짜예요(버전 확인용).</div>'+
       listHtml+
     '</div>';
   }
@@ -1451,7 +1464,6 @@
     return '<div class="card">'+
       '<div class="card-head"><h3>🗂 자료실</h3><button class="btn" data-action="add-file" data-cat="'+activeCat+'">+ 자료 추가</button></div>'+
       '<div class="subtab-bar">'+tabsHtml+'</div>'+
-      '<div class="table-hint">자료명을 클릭하면 상세 내용과 파일을 볼 수 있어요.</div>'+
       listHtml+
     '</div>';
   }
@@ -1603,6 +1615,13 @@
     else if(action==='toggle-recurring-panel'){ state.taskShowRecurringPanel = !state.taskShowRecurringPanel; renderActiveTab(); }
     else if(action==='show-task-enddate'){ state.taskEndDateOpen[el.dataset.id] = true; renderActiveTab(); }
     else if(action==='show-personal-deadline'){ state.personalDeadlineOpen[el.dataset.id] = true; renderActiveTab(); }
+    else if(action==='open-date-picker'){
+      var dateInput = document.getElementById(el.dataset.target);
+      if(dateInput){
+        if(dateInput.showPicker){ try{ dateInput.showPicker(); }catch(err){ dateInput.focus(); } }
+        else { dateInput.focus(); }
+      }
+    }
     else if(action==='personal-set-owner'){ state.personalActiveOwner = el.dataset.owner; renderActiveTab(); }
     else if(action==='manual-set-cat'){ state.manualActiveCat = el.dataset.cat; state.manualActiveCadence = 'all'; renderActiveTab(); }
     else if(action==='manual-set-cadence'){ state.manualActiveCadence = el.dataset.cadence; renderActiveTab(); }
