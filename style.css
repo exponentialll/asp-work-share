@@ -27,7 +27,7 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD 
 .tab-btn:hover{color:var(--text);}
 .tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);}
 
-main{max-width:1180px;margin:0 auto;padding:20px 22px 60px;}
+main{max-width:1440px;margin:0 auto;padding:20px 22px 60px;}
 
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:16px;}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
@@ -43,16 +43,20 @@ main{max-width:1180px;margin:0 auto;padding:20px 22px 60px;}
 .group-head{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid var(--border);}
 .group-count{font-weight:400;color:var(--text-light);font-size:12px;}
 
-table{width:100%;border-collapse:collapse;font-size:13px;}
-th{text-align:left;color:var(--text-light);font-weight:600;font-size:11.5px;padding:6px 8px;border-bottom:1px solid var(--border);white-space:nowrap;}
-td{padding:8px 8px;border-bottom:1px solid #f0f0f2;vertical-align:top;}
+table{width:100%;border-collapse:collapse;font-size:13.5px;}
+th{text-align:left;color:var(--text-light);font-weight:600;font-size:12.5px;padding:9px 10px;border-bottom:1px solid var(--border);white-space:nowrap;}
+td{padding:11px 10px;border-bottom:1px solid #f0f0f2;vertical-align:top;}
 tr:hover td{background:#fafbfd;}
 td input[type=text], td input[type=time], td input[type=date], td select, td textarea{
-  width:100%;border:1px solid transparent;background:transparent;padding:6px;border-radius:6px;font-size:13px;font-family:inherit;color:var(--text);
+  width:100%;border:1px solid transparent;background:transparent;padding:7px 8px;border-radius:6px;font-size:13.5px;font-family:inherit;color:var(--text);
 }
 td input:hover, td select:hover, td textarea:hover{border-color:var(--border);}
 td input:focus, td select:focus, td textarea:focus{border-color:var(--primary);background:#fff;outline:none;}
-td textarea{resize:none;min-height:34px;overflow:hidden;}
+td textarea{resize:none;min-height:40px;overflow:hidden;}
+
+/* 표가 좁아지면 잘리지 않고 가로 스크롤되도록 (칸이 눌려서 안 보이는 것 방지) */
+.table-scroll{overflow-x:auto;}
+.table-scroll table{min-width:900px;}
 
 .badge{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap;}
 .task-content-preview{color:var(--text-light);font-size:12px;}
@@ -63,15 +67,16 @@ td textarea{resize:none;min-height:34px;overflow:hidden;}
 .empty-state{color:var(--text-light);font-size:12.5px;padding:20px 0;text-align:center;}
 
 /* 업무 리스트 표 안의 셀 편집 요소들 */
-.cell-select-inline{width:auto;display:inline-block;font-size:11px;border:1px solid var(--border);border-radius:6px;padding:2px 6px;background:#fafbfd;margin-bottom:4px;}
-.cell-title-input{font-weight:700;font-size:13.5px;}
-.cell-textarea{font-size:12.5px;color:var(--text);min-height:38px;}
-.cell-url-input{font-size:12px;}
-.cell-check-group{display:flex;gap:8px;flex-wrap:wrap;font-size:11.5px;align-items:center;}
-.cell-check-group label{display:flex;align-items:center;gap:3px;white-space:nowrap;}
-.status-select{font-weight:700;border-radius:999px !important;text-align:center;padding:5px 8px !important;}
-.date-range{display:flex;align-items:center;gap:4px;white-space:nowrap;}
-.date-range input[type=date]{font-size:11.5px;padding:4px !important;}
+.cell-select-inline{width:auto;display:inline-block;font-size:12px;border:1px solid var(--border);border-radius:6px;padding:4px 8px;background:#fafbfd;margin-bottom:5px;}
+.cell-title-input{font-weight:700;font-size:14px;}
+.cell-textarea{font-size:13px;color:var(--text);min-height:42px;}
+.cell-url-input{font-size:12.5px;}
+.cell-check-group{display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;align-items:center;}
+.cell-check-group label{display:flex;align-items:center;gap:4px;white-space:nowrap;}
+.status-select{font-weight:700;border-radius:999px !important;text-align:center;padding:6px 10px !important;font-size:12.5px;}
+.minor-select{width:auto;min-width:80px;}
+.date-range{display:flex;align-items:center;gap:6px;white-space:nowrap;}
+.date-range input[type=date]{font-size:12.5px;padding:6px !important;}
 .date-arrow{color:var(--text-light);font-size:11px;flex-shrink:0;}
 .tag-input{border-radius:6px;font-weight:600;}
 
@@ -96,6 +101,29 @@ td textarea{resize:none;min-height:34px;overflow:hidden;}
 .filelink-details[open] summary{margin-bottom:6px;}
 
 .manual-item .manual-content{min-height:120px;}
+
+/* 업무매뉴얼: 목록형(접이식) — 여러 개를 등록해도 제목만 쭉 보이고, 클릭하면 펼쳐집니다 */
+.manual-list-item{border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden;}
+.manual-summary{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;list-style:none;font-size:13.5px;font-weight:600;}
+.manual-summary::-webkit-details-marker{display:none;}
+.manual-summary:hover{background:#fafbfd;}
+.manual-summary-title{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.manual-file-count{font-size:11px;color:var(--text-light);flex-shrink:0;}
+.manual-arrow{font-size:10px;color:var(--text-light);width:10px;display:inline-block;transition:transform .15s;flex-shrink:0;}
+.manual-list-item[open] .manual-arrow{transform:rotate(90deg);}
+.manual-list-item[open] .manual-summary{border-bottom:1px solid var(--border);}
+.manual-detail{padding:14px;}
+.manual-detail .manual-content{min-height:120px;}
+
+/* 업무 리스트 비고/댓글 */
+.comments-box{width:220px;max-width:60vw;}
+.comment-row{padding:6px 0;border-bottom:1px solid #f0f0f2;}
+.comment-row:last-child{border-bottom:none;}
+.comment-meta{font-size:10.5px;color:var(--text-light);margin-bottom:2px;}
+.comment-text{font-size:12px;color:var(--text);white-space:pre-wrap;}
+.comments-empty{font-size:11.5px;color:var(--text-light);padding:4px 0;}
+.comment-add-row{display:flex;gap:5px;margin-top:6px;}
+.comment-input{flex:1;border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:11.5px;}
 
 /* 공지사항 / 회의 / 아이디어: 문서형 카드 */
 .doc-item{border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:10px;}
