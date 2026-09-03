@@ -1253,7 +1253,7 @@
       '<td><select class="status-select" data-collection="personal" data-id="'+p.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
       '<td><div class="date-range">'+dateHtml+'</div></td>'+
       '<td style="text-align:center;"><input type="checkbox" data-collection="personal" data-id="'+p.id+'" data-field="followUp"'+(p.followUp?' checked':'')+'></td>'+
-      '<td><textarea class="cell-textarea" placeholder="비고" data-collection="personal" data-id="'+p.id+'" data-field="note">'+escapeHtml(p.note||'')+'</textarea></td>'+
+      '<td><textarea class="cell-textarea" placeholder=" " data-collection="personal" data-id="'+p.id+'" data-field="note">'+escapeHtml(p.note||'')+'</textarea></td>'+
       '<td><details class="filelink-details"><summary>📎 '+(fileCount?fileCount+'개':'첨부')+'</summary>'+renderFileLinks('personal', p)+'</details></td>'+
       '<td><button class="icon-btn danger" data-action="del-row" data-collection="personal" data-id="'+p.id+'" title="삭제">✕</button></td>'+
     '</tr>';
