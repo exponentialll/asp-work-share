@@ -15,6 +15,7 @@
   var COMM_DIRECTIONS = ['발신','수신','양방향'];
   var IDEA_STATUSES = ['검토중','채택','보류'];
   var MANUAL_CATS = ['중재','TDM','행정','교육','시스템','개인 공부','기타'];
+  var CADENCES = ['매일','주간','매달','분기별','반기별','년도별'];
 
   var CAT_COLORS = {
     '교육':  { fg:'#7d7d7d', bg:'#efefef' },
@@ -65,6 +66,14 @@
     '필수':  { fg:'#b8860b', bg:'#fdf3d6' },
     '비정기':{ fg:'#9a9a9a', bg:'#f0f0f0' }
   };
+  var CADENCE_COLORS = {
+    '매일':   MINOR_CAT_COLORS['일간'],
+    '주간':   MINOR_CAT_COLORS['주간'],
+    '매달':   MINOR_CAT_COLORS['월별'],
+    '분기별': MINOR_CAT_COLORS['분기'],
+    '반기별': MINOR_CAT_COLORS['반기'],
+    '년도별': MINOR_CAT_COLORS['년별']
+  };
   var BOARD_TO_TAB = {
     '공지사항':'announcements', '업무 리스트':'tasks', '각자 업무리스트':'personal',
     '회의':'meetings', '아이디어':'ideas', '소통일지':'comms', '자료실':'files'
@@ -101,22 +110,49 @@
   }
   function autoGrow(el){ el.style.height='auto'; el.style.height=el.scrollHeight+'px'; }
   function autoGrowAll(){ document.querySelectorAll('textarea[data-field]').forEach(autoGrow); }
-  function deadlineBadge(deadline, status){
-    if(!deadline) return '';
-    if(status==='완료') return '<span class="badge" style="color:#707070;background:#f0f0f0;">완료</span>';
-    var today = todayStr();
-    var cls = deadline < today ? { fg:'#c65c5c', bg:'#fbeaea', label:'⚠ 기한 지남' } :
-      (deadline <= addDaysStr(today,3) ? { fg:'#c98a2f', bg:'#fdf1e0', label:'곧 마감' } : { fg:'#8a8d98', bg:'#eee', label:deadline });
-    return '<span class="badge" style="color:'+cls.fg+';background:'+cls.bg+'">'+cls.label+'</span>';
-  }
   function addDaysStr(dateStr, n){
     var d = new Date(dateStr+'T00:00:00');
     d.setDate(d.getDate()+n);
     return d.getFullYear()+'-'+pad2(d.getMonth()+1)+'-'+pad2(d.getDate());
   }
+  var WEEKDAY_KOR = ['일','월','화','수','목','금','토'];
+
+  // ASP 정기업무의 "현재 기간"을 계산합니다. 기간이 바뀌면(예: 다음날/다음주) key가 자동으로
+  // 바뀌기 때문에, 완료 표시(lastDonePeriod)가 이전 key와 다르면 자연스럽게 "대기"로 리셋됩니다.
+  function periodInfo(cadence){
+    var now = new Date();
+    var y = now.getFullYear(), m = now.getMonth()+1, d = now.getDate();
+    if(cadence==='매일'){
+      return { key: todayStr(), label: y+'년 '+m+'월 '+d+'일 ('+WEEKDAY_KOR[now.getDay()]+')' };
+    }
+    if(cadence==='주간'){
+      var dow = (now.getDay()+6)%7; // 월요일=0
+      var mon = new Date(now.getFullYear(), now.getMonth(), now.getDate()-dow);
+      var sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate()+6);
+      var jan1 = new Date(mon.getFullYear(),0,1);
+      var week = Math.ceil((((mon-jan1)/86400000) + jan1.getDay()+1)/7);
+      var key = mon.getFullYear()+'-W'+pad2(week);
+      var label = pad2(mon.getMonth()+1)+'-'+pad2(mon.getDate())+' ~ '+pad2(sun.getMonth()+1)+'-'+pad2(sun.getDate())+' ('+key+')';
+      return { key:key, label:label };
+    }
+    if(cadence==='매달'){
+      return { key: y+'-'+pad2(m), label: y+'년 '+m+'월' };
+    }
+    if(cadence==='분기별'){
+      var q = Math.ceil(m/3);
+      var qMonths = [[1,3],[4,6],[7,9],[10,12]][q-1];
+      return { key: y+'-Q'+q, label: y+'년 '+q+'분기 ('+qMonths[0]+'~'+qMonths[1]+'월)' };
+    }
+    if(cadence==='반기별'){
+      var h = m<=6 ? 1 : 2;
+      var hMonths = h===1 ? [1,6] : [7,12];
+      return { key: y+'-H'+h, label: y+'년 '+(h===1?'상반기':'하반기')+' ('+hMonths[0]+'~'+hMonths[1]+'월)' };
+    }
+    return { key: ''+y, label: y+'년' }; // 년도별
+  }
 
   /* ---------------- Firebase ---------------- */
-  var db=null, auth=null, firebaseReady=false, listenersAttached=false;
+  var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false;
   function setSyncStatus(on, label){
     document.getElementById('syncDot').classList.toggle('on', on);
     document.getElementById('syncLabel').textContent = label;
@@ -132,6 +168,7 @@
       firebase.initializeApp(window.FIREBASE_CONFIG);
       db = firebase.firestore();
       auth = firebase.auth();
+      try{ if(firebase.storage) storage = firebase.storage(); }catch(e){ storage = null; }
       firebaseReady = true;
       setSyncStatus(false, '로그인 필요');
       auth.onAuthStateChanged(handleAuthStateChanged);
@@ -177,10 +214,11 @@
     setSyncStatus(false, '동기화 오류 (Firestore 보안 규칙을 확인하세요)');
   }
 
-  var COLLECTIONS = ['tasks','announcements','personal','meetings','ideas','comms','manuals','files','dday'];
-  var STATE_KEY = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'dday' };
+  var COLLECTIONS = ['tasks','announcements','personal','meetings','ideas','comms','manuals','files','dday','pins','recurring'];
+  var STATE_KEY = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'dday', pins:'pins', recurring:'recurring' };
   // 캘린더 탭은 모든 컬렉션의 날짜를 모아 보여주므로, dday를 포함한 모든 컬렉션 변경이 캘린더도 함께 갱신시켜야 합니다.
-  var TAB_FOR_COLLECTION = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar' };
+  // pins/recurring/dday는 특정 메인 탭에 속하지 않고 사이드바(또는 자체 탭)에서만 쓰이므로 tab이 null일 수 있습니다.
+  var TAB_FOR_COLLECTION = { tasks:'tasks', announcements:'announcements', personal:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar', pins:null, recurring:'recurring' };
 
   function attachListeners(){
     COLLECTIONS.forEach(function(col){
@@ -193,16 +231,17 @@
 
   // 사용자가 지금 어떤 입력칸에 타이핑 중이면, 서버에서 새 데이터가 와도 화면을 다시 그리지 않고
   // (커서 위치가 날아가는 것을 방지) 입력을 끝내면(focusout) 그때 반영합니다.
-  // 캘린더 탭은 모든 게시판의 날짜를 모아 보여주므로 어떤 컬렉션이 바뀌어도 갱신 대상입니다.
+  // 사이드바도 appShell 안에 있으므로 같은 기준으로 편집 여부를 판단합니다.
   var pendingRerender = false;
-  function onDataChanged(tab){
-    var affectsActive = (tab === state.activeTab) || state.activeTab==='calendar';
-    if(!affectsActive) return;
+  function isCurrentlyEditing(){
     var active = document.activeElement;
-    var container = document.getElementById('tabContent');
-    var isEditing = active && container.contains(active) && (active.tagName==='INPUT' || active.tagName==='TEXTAREA');
-    if(isEditing){ pendingRerender = true; return; }
-    renderActiveTab();
+    var container = document.getElementById('appShell');
+    return !!(active && container && container.contains(active) && (active.tagName==='INPUT' || active.tagName==='TEXTAREA'));
+  }
+  function onDataChanged(tab){
+    if(isCurrentlyEditing()){ pendingRerender = true; return; }
+    var affectsActive = (tab === state.activeTab) || state.activeTab==='calendar';
+    if(affectsActive){ renderActiveTab(); } else { renderSidebar(); }
   }
 
   function requireFirebase(){
@@ -228,12 +267,12 @@
     var payload = {}; payload[field] = value; payload.updatedAt = Date.now();
     db.collection(col).doc(id).update(payload).catch(function(err){ console.error(err); showToast('저장 실패: '+err.message); });
   }
-  function addRow(col, data){
+  function addRow(col, data, cb){
     if(!requireFirebase() || !requireWho()) return;
     data.clientTs = Date.now();
     data.createdAt = Date.now();
     data.createdBy = state.who;
-    db.collection(col).add(data).catch(function(err){ showToast('추가 실패: '+err.message); });
+    db.collection(col).add(data).then(function(ref){ if(cb) cb(ref.id); }).catch(function(err){ showToast('추가 실패: '+err.message); });
   }
   function delRow(col, id, label){
     if(!requireFirebase()) return;
@@ -242,7 +281,7 @@
   }
 
   /* ---------------- 중첩 배열 필드 (파일 링크 목록) 저장 헬퍼 ---------------- */
-  // 업무매뉴얼 / 소통일지의 "첨부 파일 링크" 목록처럼 문서 안에 배열로 들어있는 항목을 다룹니다.
+  // 업무매뉴얼 / 소통일지의 "첨부 파일" 목록처럼 문서 안에 배열로 들어있는 항목을 다룹니다.
   function getNestedArray(col, docId, arrField){
     var doc = (state[col]||[]).find(function(x){ return x.id===docId; });
     return doc ? (doc[arrField]||[]).slice() : [];
@@ -278,6 +317,28 @@
     var arr = getNestedArray(col, docId, 'files').filter(function(x){ return x.id!==itemId; });
     saveNestedArray(col, docId, 'files', arr);
   }
+  // 실제 파일을 Firebase Storage에 업로드합니다 (Blaze 요금제 + Storage 활성화가 되어 있어야 동작해요).
+  function uploadFile(col, docId, file){
+    if(!requireFirebase()) return;
+    if(!storage){
+      showToast('파일 업로드를 쓰려면 Firebase Storage 설정이 필요해요 (README 7단계 참고)');
+      return;
+    }
+    var path = col+'/'+docId+'/'+Date.now()+'_'+file.name;
+    var ref = storage.ref().child(path);
+    showToast('업로드 중...');
+    ref.put(file).then(function(snap){
+      return snap.ref.getDownloadURL();
+    }).then(function(url){
+      var arr = getNestedArray(col, docId, 'files');
+      arr.push({ id:uid(), name:file.name, url:url });
+      saveNestedArray(col, docId, 'files', arr);
+      showToast('업로드 완료');
+    }).catch(function(err){
+      console.error(err);
+      showToast('업로드 실패: '+(err && err.message ? err.message : 'Storage 설정을 확인하세요'));
+    });
+  }
   function renderFileLinks(col, doc){
     var files = doc.files || [];
     var rows = files.map(function(f){
@@ -288,10 +349,15 @@
         '<button class="icon-btn danger" data-action="del-filelink" data-collection="'+col+'" data-id="'+doc.id+'" data-item="'+f.id+'" title="삭제">✕</button>'+
       '</div>';
     }).join('');
+    var uploadId = 'upload-'+col+'-'+doc.id;
     return '<div class="filelinks">'+
-      '<div class="filelinks-label">📎 첨부 파일 링크</div>'+
+      '<div class="filelinks-label">📎 첨부 파일</div>'+
       (rows || '')+
-      '<button class="btn ghost sm" data-action="add-filelink" data-collection="'+col+'" data-id="'+doc.id+'">+ 파일 링크 추가</button>'+
+      '<div class="filelink-actions">'+
+        '<input type="file" class="filelink-upload-input hidden" id="'+uploadId+'" data-collection="'+col+'" data-id="'+doc.id+'">'+
+        '<button class="btn ghost sm" type="button" data-action="trigger-upload" data-target="'+uploadId+'">📤 파일 업로드</button>'+
+        '<button class="btn ghost sm" data-action="add-filelink" data-collection="'+col+'" data-id="'+doc.id+'">+ 링크로 추가</button>'+
+      '</div>'+
     '</div>';
   }
 
@@ -325,12 +391,14 @@
   var state = {
     activeTab:'announcements',
     who: localStorage.getItem('asp_share_who') || '',
-    tasks: [], announcements: [], personal: [], meetings: [], ideas: [], comms: [], manuals: [], files: [], dday: [],
+    tasks: [], announcements: [], personal: [], meetings: [], ideas: [], comms: [], manuals: [], files: [], dday: [], pins: [], recurring: [],
     taskFilterPerson: 'all',
     taskFilterStatus: 'all',
-    taskCollapsed: {},
+    taskActiveMajor: MAJOR_CATS[0],
     taskSortField: null, // null이면 기본 정렬(진행도→최신순), 아니면 헤더 클릭으로 선택한 필드
     taskSortDir: 'asc',
+    personalActiveOwner: PEOPLE[0],
+    manualActiveId: null, // null이면 목록 화면, id가 있으면 그 매뉴얼의 상세 화면
     calMonth: (function(){ var d=new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1); })(),
     calSelectedDate: null,
     calFilter: 'all' // all | shared | 지수 | 윤다경
@@ -358,6 +426,7 @@
     if(state.activeTab==='announcements') c.innerHTML = renderAnnouncementsTab();
     else if(state.activeTab==='calendar') c.innerHTML = renderCalendarTab();
     else if(state.activeTab==='tasks') c.innerHTML = renderTasksTab();
+    else if(state.activeTab==='recurring') c.innerHTML = renderRecurringTab();
     else if(state.activeTab==='personal') c.innerHTML = renderPersonalTab();
     else if(state.activeTab==='meetings') c.innerHTML = renderMeetingsTab();
     else if(state.activeTab==='ideas') c.innerHTML = renderIdeasTab();
@@ -365,6 +434,84 @@
     else if(state.activeTab==='manuals') c.innerHTML = renderManualsTab();
     else if(state.activeTab==='files') c.innerHTML = renderFilesTab();
     autoGrowAll();
+    renderSidebar();
+  }
+
+  /* ================= 사이드바 (미니 캘린더 · D-day · 메모) ================= */
+  function renderSidebar(){
+    var el = document.getElementById('sidebarPanel');
+    if(!el) return;
+    el.innerHTML = renderMiniCalendarWidget() + renderSidebarDdayWidget() + renderPinsWidget();
+  }
+  function renderMiniCalendarWidget(){
+    var allItems = buildCalendarItems();
+    var byDate = {};
+    allItems.forEach(function(it){ (byDate[it.date] = byDate[it.date]||[]).push(it); });
+    var ym = state.calMonth.split('-').map(Number);
+    var year = ym[0], month = ym[1]-1;
+    var wdNames = ['월','화','수','목','금','토','일'];
+    var firstDay = new Date(year, month, 1);
+    var startOffset = (firstDay.getDay()+6)%7;
+    var daysInMonth = new Date(year, month+1, 0).getDate();
+    var today = todayStr();
+    var gridHtml = wdNames.map(function(w){ return '<div class="mini-cal-wd">'+w+'</div>'; }).join('');
+    for(var i=0;i<startOffset;i++){ gridHtml += '<div class="mini-cal-day empty"></div>'; }
+    for(var d=1; d<=daysInMonth; d++){
+      var dateStr = year+'-'+pad2(month+1)+'-'+pad2(d);
+      var items = byDate[dateStr] || [];
+      var cls = 'mini-cal-day';
+      if(dateStr===today) cls += ' today';
+      if(dateStr===state.calSelectedDate) cls += ' selected';
+      gridHtml += '<div class="'+cls+'" data-action="sidebar-goto-date" data-date="'+dateStr+'">'+d+(items.length?'<span class="mini-cal-dot"></span>':'')+'</div>';
+    }
+    return '<div class="sidebar-card">'+
+      '<div class="sidebar-card-head"><button class="icon-btn" data-action="cal-prev" title="이전달">‹</button>'+
+        '<span>'+year+'.'+pad2(month+1)+'</span>'+
+        '<button class="icon-btn" data-action="cal-next" title="다음달">›</button></div>'+
+      '<div class="mini-cal-grid">'+gridHtml+'</div>'+
+      '<button class="btn ghost sm sidebar-cal-more" data-action="goto-board" data-tab="calendar">캘린더 전체 보기</button>'+
+    '</div>';
+  }
+  function renderSidebarDdayWidget(){
+    var items = state.dday.slice().sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); });
+    var today = todayStr();
+    var rows = items.map(function(dd){
+      var diff = Math.round((new Date(dd.date+'T00:00:00') - new Date(today+'T00:00:00')) / 86400000);
+      var badgeLabel = diff===0 ? 'D-DAY' : diff>0 ? 'D-'+diff : 'D+'+Math.abs(diff);
+      var badgeStyle = diff<0 ? 'color:#9a9a9a;background:#f0f0f0;' : diff===0 ? 'color:#c65c5c;background:#fbeaea;' : 'color:'+DDAY_COLOR.fg+';background:'+DDAY_COLOR.bg+';';
+      return '<div class="dday-row sidebar-dday-row" data-id="'+dd.id+'">'+
+        '<span class="badge" style="'+badgeStyle+'">'+badgeLabel+'</span>'+
+        '<input type="text" class="dday-title-input" placeholder="중요 일정명" data-collection="dday" data-id="'+dd.id+'" data-field="title" value="'+escapeHtml(dd.title||'')+'">'+
+        '<button class="icon-btn danger" data-action="del-row" data-collection="dday" data-id="'+dd.id+'" title="삭제">✕</button>'+
+      '</div>';
+    }).join('');
+    return '<div class="sidebar-card">'+
+      '<div class="sidebar-card-head"><span>📌 중요 일정 D-day</span></div>'+
+      (rows || '<div class="sidebar-empty">등록된 일정이 없습니다.</div>')+
+      '<button class="btn ghost sm" data-action="add-dday">+ 일정 추가</button>'+
+    '</div>';
+  }
+  function renderPinsWidget(){
+    var items = state.pins.slice().sort(function(a,b){
+      var da = (a.done?1:0)-(b.done?1:0);
+      if(da!==0) return da;
+      return (b.clientTs||0)-(a.clientTs||0);
+    });
+    var rows = items.map(function(p){
+      return '<div class="pin-row'+(p.done?' done':'')+'" data-id="'+p.id+'">'+
+        '<input type="checkbox" data-collection="pins" data-id="'+p.id+'" data-field="done"'+(p.done?' checked':'')+'>'+
+        '<span class="pin-text">'+escapeHtml(p.text||'')+'</span>'+
+        '<button class="icon-btn danger" data-action="del-row" data-collection="pins" data-id="'+p.id+'" title="삭제">✕</button>'+
+      '</div>';
+    }).join('');
+    return '<div class="sidebar-card">'+
+      '<div class="sidebar-card-head"><span>📝 꼭 기억할 메모</span></div>'+
+      (rows || '<div class="sidebar-empty">메모가 없습니다.</div>')+
+      '<div class="pin-add-row">'+
+        '<input type="text" id="pinQuickInput" placeholder="메모 입력 후 Enter">'+
+        '<button class="btn ghost sm" data-action="add-pin">추가</button>'+
+      '</div>'+
+    '</div>';
   }
 
   /* ================= 📢 공지사항 ================= */
@@ -394,7 +541,7 @@
 
   /* ================= 📅 캘린더 (모든 게시판 날짜 통합) ================= */
   // 각 게시판 항목의 날짜를 모아 하나의 캘린더로 보여줍니다.
-  // 담당자가 1명뿐인 업무/각자 업무리스트는 "개인 일정"으로, 그 외(담당자 없음/2명 이상, 공지·회의·아이디어·소통일지·업무내용일지·자료실)는 "공동 일정"으로 분류합니다.
+  // 담당자가 1명뿐인 업무/각자 업무리스트는 "개인 일정"으로, 그 외(담당자 없음/2명 이상, 공지·회의·아이디어·소통일지·자료실)는 "공동 일정"으로 분류합니다.
   function classifyTask(t){
     var as = t.assignees || [];
     if(as.length===1) return { type:'개인', owner:as[0] };
@@ -472,7 +619,8 @@
     }
 
     return '<div class="card">'+
-        renderDdayWidget()+
+        '<div class="card-head"><h3>📌 중요 일정 D-day</h3><button class="btn" data-action="add-dday">+ 중요 일정 추가</button></div>'+
+        (renderDdayRows())+
       '</div>'+
       '<div class="card">'+
         '<div class="card-head"><h3>📅 '+year+'년 '+(month+1)+'월</h3>'+
@@ -493,7 +641,7 @@
       '</div>';
   }
 
-  function renderDdayWidget(){
+  function renderDdayRows(){
     var items = state.dday.slice().sort(function(a,b){ return (a.date||'').localeCompare(b.date||''); });
     var today = todayStr();
     var rows = items.map(function(dd){
@@ -507,14 +655,46 @@
         '<button class="icon-btn danger" data-action="del-row" data-collection="dday" data-id="'+dd.id+'" title="삭제">✕</button>'+
       '</div>';
     }).join('');
-    return '<div class="card-head"><h3>📌 중요 일정 D-day</h3><button class="btn" data-action="add-dday">+ 중요 일정 추가</button></div>'+
-      (rows || '<div class="empty-state">등록된 중요 일정이 없습니다.</div>');
+    return rows || '<div class="empty-state">등록된 중요 일정이 없습니다.</div>';
   }
 
-  /* ================= 📋 업무 리스트 (공동, Notion 포맷) ================= */
-  var TASK_SORT_LABELS = { minor:'소분류', date:'날짜', status:'진행도', assignees:'담당자' };
+  /* ================= ✅ ASP 정기업무 현황 (체크리스트) ================= */
+  function renderRecurringTab(){
+    var doneCount = 0;
+    var groups = CADENCES.map(function(cad){
+      var pi = periodInfo(cad);
+      var items = state.recurring.filter(function(r){ return r.cadence===cad; })
+        .sort(function(a,b){ return (a.clientTs||0)-(b.clientTs||0); });
+      var cc = CADENCE_COLORS[cad] || {fg:'#888',bg:'#eee'};
+      var rows = items.map(function(r){
+        var done = r.lastDonePeriod===pi.key;
+        if(done) doneCount++;
+        return '<div class="recur-row'+(done?' done':'')+'" data-id="'+r.id+'">'+
+          '<button class="recur-toggle'+(done?' done':'')+'" data-action="toggle-recur-done" data-id="'+r.id+'" data-period="'+pi.key+'" title="완료로 표시">'+(done?'✅':'⬜')+'</button>'+
+          '<input type="text" class="recur-title-input" placeholder="업무명" data-collection="recurring" data-id="'+r.id+'" data-field="label" value="'+escapeHtml(r.label||'')+'">'+
+          '<button class="icon-btn danger" data-action="del-row" data-collection="recurring" data-id="'+r.id+'" title="삭제">✕</button>'+
+        '</div>';
+      }).join('');
+      return '<div class="recur-group">'+
+        '<div class="recur-group-head">'+
+          '<span class="badge" style="background:'+cc.bg+';color:'+cc.fg+';">'+cad+'</span>'+
+          '<span class="recur-period-label">'+pi.label+'</span>'+
+          '<button class="btn ghost sm" data-action="add-recur" data-cadence="'+cad+'">+ 항목 추가</button>'+
+        '</div>'+
+        (rows || '<div class="empty-state">등록된 정기업무가 없습니다.</div>')+
+      '</div>';
+    }).join('');
+    var total = state.recurring.length;
+    return '<div class="card">'+
+      '<div class="card-head"><h3>✅ ASP 정기업무 현황</h3><span class="recur-progress">'+doneCount+' / '+total+' 완료</span></div>'+
+      '<div class="table-hint">주기가 바뀌면(다음날/다음주/다음달 등) 자동으로 다시 "대기" 상태가 돼요.</div>'+
+      groups+
+    '</div>';
+  }
+
+  /* ================= 📋 업무 리스트 (대분류별 탭) ================= */
+  var TASK_SORT_LABELS = { date:'날짜', status:'진행도', assignees:'담당자' };
   function taskSortValue(t, field){
-    if(field==='minor') return MINOR_CATS.indexOf(t.minor); // -1(없음)이 먼저 오도록
     if(field==='date') return t.date || '';
     if(field==='status') return STATUS_ORDER[t.status]===undefined ? 9 : STATUS_ORDER[t.status];
     if(field==='assignees') return (t.assignees||[]).slice().sort().join(',');
@@ -543,64 +723,55 @@
   }
 
   function renderTasksTab(){
+    var activeMajor = state.taskActiveMajor || MAJOR_CATS[0];
     var filtered = state.tasks.filter(function(t){
+      if((t.major||MAJOR_CATS[0])!==activeMajor) return false;
       if(state.taskFilterPerson!=='all' && (t.assignees||[]).indexOf(state.taskFilterPerson)===-1) return false;
       if(state.taskFilterStatus!=='all' && t.status!==state.taskFilterStatus) return false;
       return true;
     });
     var sorted = sortTasks(filtered);
 
+    var tabsHtml = MAJOR_CATS.map(function(cat){
+      var cnt = state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===cat; }).length;
+      var cc = CAT_COLORS[cat];
+      var isActive = cat===activeMajor;
+      var style = isActive ? 'background:'+cc.bg+';color:'+cc.fg+';border-color:'+cc.bg+';' : '';
+      return '<button class="subtab-btn" data-action="task-set-major" data-major="'+cat+'" style="'+style+'">'+cat+' <span class="subtab-count">'+cnt+'</span></button>';
+    }).join('');
+
     var headRow = '<tr>'+
-      '<th style="min-width:150px">업무</th>'+
+      '<th style="min-width:220px">업무 (소분류 · 업무명)</th>'+
       '<th style="min-width:220px">내용</th>'+
-      '<th data-action="sort-tasks" data-field="minor" class="sortable-th" style="min-width:100px">소분류'+sortArrow('minor')+'</th>'+
       '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:200px">날짜'+sortArrow('date')+'</th>'+
       '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:100px">담당자'+sortArrow('assignees')+'</th>'+
       '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:100px">진행도'+sortArrow('status')+'</th>'+
       '<th style="min-width:150px">비고</th><th></th>'+
     '</tr>';
 
-    function groupBlock(cat, items){
-      var collapsed = !!state.taskCollapsed[cat];
-      var head = '<div class="group-head clickable" data-action="toggle-group" data-cat="'+cat+'">'+
-          '<span class="group-arrow">'+(collapsed?'▶':'▼')+'</span>'+
-          badge(cat, CAT_COLORS)+'<span class="group-count">'+items.length+'건</span>'+
-        '</div>';
-      if(collapsed || !items.length) return '<div class="group">'+head+(items.length?'':'<div class="empty-state">등록된 업무가 없습니다.</div>')+'</div>';
-      return '<div class="group">'+head+
-        '<div class="table-scroll"><table><thead>'+headRow+'</thead><tbody>'+items.map(renderTaskRow).join('')+'</tbody></table></div>'+
-      '</div>';
-    }
-
-    var groupsHtml = MAJOR_CATS.map(function(cat){
-      var items = sorted.filter(function(t){ return t.major===cat; });
-      return items.length ? groupBlock(cat, items) : '';
-    }).join('');
-
-    var uncategorized = sorted.filter(function(t){ return MAJOR_CATS.indexOf(t.major)===-1; });
-    if(uncategorized.length) groupsHtml += groupBlock('미분류', uncategorized);
-
-    if(!filtered.length) groupsHtml = '<div class="empty-state">등록된 업무가 없습니다. "+ 업무 추가"를 눌러 바로 입력해보세요.</div>';
+    var tableHtml = sorted.length ?
+      '<div class="table-scroll"><table><thead>'+headRow+'</thead><tbody>'+sorted.map(renderTaskRow).join('')+'</tbody></table></div>'
+      : '<div class="empty-state">"'+activeMajor+'" 분류에 등록된 업무가 없습니다. "+ 업무 추가"를 눌러보세요.</div>';
 
     var personOpts = '<option value="all">담당자 전체</option>'+PEOPLE.map(function(p){ return '<option value="'+p+'"'+(state.taskFilterPerson===p?' selected':'')+'>'+p+'</option>'; }).join('');
     var statusOpts = '<option value="all">진행도 전체</option>'+STATUSES.map(function(s){ return '<option value="'+s+'"'+(state.taskFilterStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
 
     return '<div class="card">'+
       '<div class="card-head">'+
-        '<h3>📋 업무 리스트 (대분류별)</h3>'+
+        '<h3>📋 업무 리스트</h3>'+
         '<div class="toolbar">'+
           '<select id="filterPerson">'+personOpts+'</select>'+
           '<select id="filterStatus">'+statusOpts+'</select>'+
           '<button class="btn" data-action="add-task">+ 업무 추가</button>'+
         '</div>'+
       '</div>'+
-      '<div class="table-hint">열 제목을 클릭하면 정렬, 그룹 제목을 클릭하면 접고 펼 수 있어요.</div>'+
-      groupsHtml+
+      '<div class="subtab-bar">'+tabsHtml+'</div>'+
+      '<div class="table-hint">열 제목을 클릭하면 정렬돼요. 소분류 배지를 눌러 주기를 바꿀 수 있어요.</div>'+
+      tableHtml+
     '</div>';
   }
 
   function renderTaskRow(t){
-    var majorOpts = MAJOR_CATS.map(function(c){ return '<option value="'+c+'"'+(t.major===c?' selected':'')+'>'+c+'</option>'; }).join('');
     var curMinor = t.minor || '';
     var minorOpts = '<option value="">-</option>'+MINOR_CATS.map(function(c){ return '<option value="'+c+'"'+(t.minor===c?' selected':'')+'>'+c+'</option>'; }).join('');
     var mnc = MINOR_CAT_COLORS[curMinor] || {fg:'#888',bg:'#f0f0f0'};
@@ -615,12 +786,11 @@
       '<span class="date-arrow">→</span>'+
       '<input type="date" data-collection="tasks" data-id="'+t.id+'" data-field="endDate" value="'+escapeHtml(t.endDate||'')+'" title="종료일 (선택)">';
     return '<tr data-id="'+t.id+'">'+
-      '<td>'+
-        '<select class="cell-select-inline" data-collection="tasks" data-id="'+t.id+'" data-field="major">'+majorOpts+'</select>'+
+      '<td><div class="task-title-cell">'+
+        '<select class="status-select minor-select" data-collection="tasks" data-id="'+t.id+'" data-field="minor" style="background:'+mnc.bg+';color:'+mnc.fg+';">'+minorOpts+'</select>'+
         '<input type="text" class="cell-title-input" placeholder="업무명" data-collection="tasks" data-id="'+t.id+'" data-field="title" value="'+escapeHtml(t.title||'')+'">'+
-      '</td>'+
+      '</div></td>'+
       '<td><textarea class="cell-textarea" placeholder="내용/메모" data-collection="tasks" data-id="'+t.id+'" data-field="content">'+escapeHtml(t.content||'')+'</textarea></td>'+
-      '<td><select class="status-select minor-select" data-collection="tasks" data-id="'+t.id+'" data-field="minor" style="background:'+mnc.bg+';color:'+mnc.fg+';">'+minorOpts+'</select></td>'+
       '<td><div class="date-range">'+dateRangeHtml+'</div></td>'+
       '<td><div class="cell-check-group">'+peopleChecks+'</div></td>'+
       '<td><select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
@@ -629,25 +799,31 @@
     '</tr>';
   }
 
-  /* ================= 🙋 각자 업무리스트 (개인별, 표 형식) ================= */
+  /* ================= 🙋 각자 업무리스트 (엑셀 시트 방식) ================= */
   function renderPersonalTab(){
-    return PEOPLE.map(function(person){
-      var items = state.personal.filter(function(p){ return p.owner===person; })
-        .sort(function(a,b){
-          var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
-          if(so!==0) return so;
-          return (b.clientTs||0)-(a.clientTs||0);
-        });
-      var rows = items.map(renderPersonalRow).join('');
-      return '<div class="card">'+
-        '<div class="card-head"><h3>'+badge(person, PERSON_COLORS)+' 업무리스트</h3>'+
-          '<button class="btn" data-action="add-personal" data-owner="'+person+'">+ 추가</button></div>'+
-        (items.length ?
-          '<div class="table-scroll"><table><thead><tr><th style="min-width:100px">분류</th><th style="min-width:120px">이름</th><th style="min-width:200px">업무</th><th style="min-width:100px">진행도</th><th style="min-width:130px">시작</th><th style="min-width:130px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">URL</th><th style="min-width:110px">연락처</th><th></th></tr></thead>'+
-          '<tbody>'+rows+'</tbody></table></div>'
-          : '<div class="empty-state">등록된 업무가 없습니다. "+ 추가"를 눌러 지금 하고 있는 공부/업무를 기록해보세요.</div>')+
-      '</div>';
+    var owner = state.personalActiveOwner || PEOPLE[0];
+    var items = state.personal.filter(function(p){ return p.owner===owner; })
+      .sort(function(a,b){
+        var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
+        if(so!==0) return so;
+        return (b.clientTs||0)-(a.clientTs||0);
+      });
+    var rows = items.map(renderPersonalRow).join('');
+    var tabsHtml = PEOPLE.map(function(p){
+      var pc = PERSON_COLORS[p];
+      var isActive = p===owner;
+      var style = isActive ? 'background:'+pc.bg+';color:'+pc.fg+';border-color:'+pc.bg+';' : '';
+      var cnt = state.personal.filter(function(x){ return x.owner===p; }).length;
+      return '<button class="subtab-btn sheet-tab" data-action="personal-set-owner" data-owner="'+p+'" style="'+style+'">'+p+' <span class="subtab-count">'+cnt+'</span></button>';
     }).join('');
+    return '<div class="card">'+
+      '<div class="card-head"><h3>🙋 각자 업무리스트</h3><button class="btn" data-action="add-personal" data-owner="'+owner+'">+ 추가</button></div>'+
+      '<div class="sheet-tab-bar">'+tabsHtml+'</div>'+
+      (items.length ?
+        '<div class="table-scroll"><table><thead><tr><th style="min-width:100px">분류</th><th style="min-width:120px">이름</th><th style="min-width:200px">업무</th><th style="min-width:100px">진행도</th><th style="min-width:130px">시작</th><th style="min-width:130px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">URL</th><th style="min-width:110px">연락처</th><th></th></tr></thead>'+
+        '<tbody>'+rows+'</tbody></table></div>'
+        : '<div class="empty-state">등록된 업무가 없습니다. "+ 추가"를 눌러 지금 하고 있는 공부/업무를 기록해보세요.</div>')+
+    '</div>';
   }
   function renderPersonalRow(p){
     var tc = hashColor(p.category||'');
@@ -753,44 +929,51 @@
     '</tr>';
   }
 
-  /* ================= 📔 업무매뉴얼 ================= */
+  /* ================= 📔 업무매뉴얼 (게시판 형식: 목록 → 클릭 → 상세) ================= */
   function renderManualsTab(){
+    if(state.manualActiveId){
+      var m = state.manuals.find(function(x){ return x.id===state.manualActiveId; });
+      if(m) return renderManualDetail(m);
+      state.manualActiveId = null;
+    }
     var items = state.manuals.slice().sort(function(a,b){
       var ao = MANUAL_CATS.indexOf(a.category), bo = MANUAL_CATS.indexOf(b.category);
       if(ao!==bo) return ao-bo;
       return (a.clientTs||0)-(b.clientTs||0);
     });
-    var listHtml = items.length ? items.map(renderManualItem).join('') : '<div class="empty-state">등록된 업무매뉴얼이 없습니다. 중재·TDM·행정 등 업무별 매뉴얼이나 공부 자료를 정리해보세요.</div>';
+    var rows = items.map(function(m){
+      var cat = m.category || MANUAL_CATS[0];
+      var fileCount = (m.files||[]).length;
+      return '<tr class="board-row" data-action="open-manual" data-id="'+m.id+'">'+
+        '<td>'+badge(cat, MANUAL_CAT_COLORS)+'</td>'+
+        '<td class="board-title-cell">'+escapeHtml(m.title||'(제목 없음)')+(fileCount?' <span class="manual-file-count">📎 '+fileCount+'</span>':'')+'</td>'+
+        '<td class="task-content-preview">'+escapeHtml(m.createdBy||'')+'</td>'+
+      '</tr>';
+    }).join('');
+    var listHtml = items.length ?
+      '<table class="board-table"><thead><tr><th style="width:110px">분류</th><th>제목</th><th style="width:100px">작성자</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      : '<div class="empty-state">등록된 업무매뉴얼이 없습니다. 중재·TDM·행정 등 업무별 매뉴얼이나 공부 자료를 정리해보세요.</div>';
     return '<div class="card">'+
       '<div class="card-head"><h3>📔 업무매뉴얼</h3><button class="btn" data-action="add-manual">+ 새 매뉴얼 작성</button></div>'+
+      '<div class="table-hint">제목을 클릭하면 내용을 볼 수 있어요.</div>'+
       listHtml+
     '</div>';
   }
-  function renderManualItem(m){
+  function renderManualDetail(m){
     var cat = m.category || MANUAL_CATS[0];
     var mc = MANUAL_CAT_COLORS[cat] || {fg:'#888',bg:'#eee'};
     var catOpts = MANUAL_CATS.map(function(c){ return '<option value="'+c+'"'+(cat===c?' selected':'')+'>'+c+'</option>'; }).join('');
-    var fileCount = (m.files||[]).length;
-    var title = m.title || '(제목 없음)';
-    var openAttr = m.title ? '' : ' open'; // 제목이 아직 없는 새 항목은 펼쳐진 채로 보여줍니다
-    return '<details class="manual-list-item" data-id="'+m.id+'"'+openAttr+'>'+
-      '<summary class="manual-summary">'+
-        '<span class="manual-arrow">▸</span>'+
-        '<span class="badge" style="color:'+mc.fg+';background:'+mc.bg+';">'+escapeHtml(cat)+'</span>'+
-        '<span class="manual-summary-title">'+escapeHtml(title)+'</span>'+
-        (fileCount ? '<span class="manual-file-count">📎 '+fileCount+'</span>' : '')+
-      '</summary>'+
-      '<div class="manual-detail">'+
-        '<div class="doc-item-head">'+
-          '<select class="status-select-sm" data-collection="manuals" data-id="'+m.id+'" data-field="category" style="background:'+mc.bg+';color:'+mc.fg+';">'+catOpts+'</select>'+
-          '<input type="text" class="doc-title-input" placeholder="매뉴얼 제목 (예: 중재 업무 매뉴얼)" data-collection="manuals" data-id="'+m.id+'" data-field="title" value="'+escapeHtml(m.title||'')+'">'+
-          '<button class="icon-btn danger" data-action="del-row" data-collection="manuals" data-id="'+m.id+'" title="삭제">✕</button>'+
-        '</div>'+
-        '<div class="note-meta">'+escapeHtml(m.createdBy||'')+'</div>'+
-        '<textarea class="doc-content-input manual-content" placeholder="업무 절차, 참고사항 등을 자유롭게 정리하세요" data-collection="manuals" data-id="'+m.id+'" data-field="content">'+escapeHtml(m.content||'')+'</textarea>'+
-        renderFileLinks('manuals', m)+
+    return '<div class="card">'+
+      '<button class="btn ghost sm" data-action="close-manual">← 목록으로</button>'+
+      '<div class="doc-item-head" style="margin-top:12px;">'+
+        '<select class="status-select-sm" data-collection="manuals" data-id="'+m.id+'" data-field="category" style="background:'+mc.bg+';color:'+mc.fg+';">'+catOpts+'</select>'+
+        '<input type="text" class="doc-title-input" placeholder="매뉴얼 제목 (예: 중재 업무 매뉴얼)" data-collection="manuals" data-id="'+m.id+'" data-field="title" value="'+escapeHtml(m.title||'')+'">'+
+        '<button class="icon-btn danger" data-action="del-manual-and-close" data-id="'+m.id+'" title="삭제">✕</button>'+
       '</div>'+
-    '</details>';
+      '<div class="note-meta">'+escapeHtml(m.createdBy||'')+'</div>'+
+      '<textarea class="doc-content-input manual-content" placeholder="업무 절차, 참고사항 등을 자유롭게 정리하세요" data-collection="manuals" data-id="'+m.id+'" data-field="content">'+escapeHtml(m.content||'')+'</textarea>'+
+      renderFileLinks('manuals', m)+
+    '</div>';
   }
 
   /* ================= 🗂 자료실 ================= */
@@ -816,8 +999,8 @@
     '</tr>';
   }
 
-  /* ---------------- Event Delegation ---------------- */
-  var mainEl = document.querySelector('main');
+  /* ---------------- Event Delegation (appShell 전체 — 사이드바 포함) ---------------- */
+  var mainEl = document.getElementById('appShell');
 
   mainEl.addEventListener('click', function(e){
     var el = e.target.closest('[data-action]');
@@ -826,25 +1009,66 @@
     var col = el.dataset.collection, id = el.dataset.id;
 
     if(action==='add-announcement') addRow('announcements', { title:'', content:'', date:todayStr() });
-    else if(action==='add-task') addRow('tasks', { major:MAJOR_CATS[0], minor:'', title:'', date:todayStr(), endDate:'', status:'시작 전', content:'', assignees:[], comments:[] });
+    else if(action==='add-task') addRow('tasks', { major:state.taskActiveMajor, minor:'', title:'', date:todayStr(), endDate:'', status:'시작 전', content:'', assignees:[], comments:[] });
     else if(action==='add-personal') addRow('personal', { owner:el.dataset.owner, category:'', title:'', content:'', status:'시작 전', startDate:'', deadline:'', followUp:false, url:'', contact:'' });
     else if(action==='add-meeting') addRow('meetings', { title:'', date:todayStr(), attendees:[], content:'' });
     else if(action==='add-idea') addRow('ideas', { title:'', content:'', status:'검토중', date:todayStr() });
     else if(action==='add-comm') addRow('comms', { date:todayStr(), dept:'', workCategory:COMM_WORK_CATS[0], target:'', content:'', direction:COMM_DIRECTIONS[0], ext:'', participants:[], note:'', files:[] });
-    else if(action==='add-manual') addRow('manuals', { category:MANUAL_CATS[0], title:'', content:'', files:[] });
+    else if(action==='add-manual'){
+      addRow('manuals', { category:MANUAL_CATS[0], title:'', content:'', files:[] }, function(newId){
+        state.manualActiveId = newId;
+        renderActiveTab();
+      });
+    }
     else if(action==='add-file') addRow('files', { title:'', url:'', category:'', date:todayStr() });
     else if(action==='add-dday') addRow('dday', { title:'', date:todayStr() });
+    else if(action==='add-recur') addRow('recurring', { label:'', cadence: el.dataset.cadence, lastDonePeriod:'' });
+    else if(action==='add-pin'){
+      var pinInput = document.getElementById('pinQuickInput');
+      if(pinInput && pinInput.value.trim()){ addRow('pins', { text: pinInput.value.trim(), done:false }); pinInput.value=''; }
+    }
     else if(action==='del-row') delRow(col, id);
     else if(action==='add-filelink') addFileLink(col, id);
     else if(action==='del-filelink') delFileLink(col, id, el.dataset.item);
+    else if(action==='trigger-upload'){
+      var fi = document.getElementById(el.dataset.target);
+      if(fi) fi.click();
+    }
     else if(action==='add-comment'){
       var inputEl = el.parentElement.querySelector('.comment-input');
       if(inputEl){ addComment(col, id, inputEl.value); inputEl.value=''; }
     }
-    else if(action==='toggle-group'){
-      var cat = el.dataset.cat;
-      state.taskCollapsed[cat] = !state.taskCollapsed[cat];
+    else if(action==='task-set-major'){
+      state.taskActiveMajor = el.dataset.major;
       renderActiveTab();
+    }
+    else if(action==='personal-set-owner'){
+      state.personalActiveOwner = el.dataset.owner;
+      renderActiveTab();
+    }
+    else if(action==='open-manual'){
+      state.manualActiveId = id;
+      renderActiveTab();
+    }
+    else if(action==='close-manual'){
+      state.manualActiveId = null;
+      renderActiveTab();
+    }
+    else if(action==='del-manual-and-close'){
+      if(!requireFirebase()) return;
+      if(!confirm('이 매뉴얼을 삭제할까요?')) return;
+      db.collection('manuals').doc(id).delete().then(function(){
+        state.manualActiveId = null;
+        renderActiveTab();
+      }).catch(function(err){ showToast('삭제 실패: '+err.message); });
+    }
+    else if(action==='toggle-recur-done'){
+      if(!requireFirebase()) return;
+      var rdoc = state.recurring.find(function(x){ return x.id===id; });
+      if(!rdoc) return;
+      var period = el.dataset.period;
+      var newVal = rdoc.lastDonePeriod===period ? '' : period;
+      db.collection('recurring').doc(id).update({ lastDonePeriod:newVal, updatedAt:Date.now() }).catch(function(err){ showToast('저장 실패: '+err.message); });
     }
     else if(action==='sort-tasks'){
       var f = el.dataset.field;
@@ -866,6 +1090,11 @@
     }
     else if(action==='select-cal-date'){
       state.calSelectedDate = (state.calSelectedDate===el.dataset.date) ? null : el.dataset.date;
+      renderActiveTab();
+    }
+    else if(action==='sidebar-goto-date'){
+      state.calSelectedDate = el.dataset.date;
+      state.activeTab = 'calendar';
       renderActiveTab();
     }
     else if(action==='goto-board'){
@@ -920,12 +1149,16 @@
     if(pendingRerender){ pendingRerender=false; renderActiveTab(); }
   });
 
-  // select / date / checkbox 등 값이 바뀌는 즉시 저장
+  // select / date / checkbox / 파일 업로드 등 값이 바뀌는 즉시 저장
   mainEl.addEventListener('change', function(e){
     var t = e.target;
     if(t.id==='filterPerson'){ state.taskFilterPerson = t.value; renderActiveTab(); return; }
     if(t.id==='filterStatus'){ state.taskFilterStatus = t.value; renderActiveTab(); return; }
     if(t.id==='calFilterSelect'){ state.calFilter = t.value; renderActiveTab(); return; }
+    if(t.type==='file' && t.classList.contains('filelink-upload-input')){
+      if(t.files && t.files[0]) uploadFile(t.dataset.collection, t.dataset.id, t.files[0]);
+      return;
+    }
     if(!t.dataset.field || !t.dataset.collection) return;
     var val = t.type==='checkbox' ? t.checked : t.value;
     flushSaveNow(t.dataset.collection, t.dataset.id, t.dataset.field, val);
@@ -944,12 +1177,16 @@
     }
   });
 
-  // 비고 입력창에서 Enter로 바로 등록
+  // Enter로 바로 등록: 업무 리스트 비고, 사이드바 메모
   mainEl.addEventListener('keydown', function(e){
     if(e.key==='Enter' && e.target.classList.contains('comment-input')){
       e.preventDefault();
       addComment(e.target.dataset.collection, e.target.dataset.id, e.target.value);
       e.target.value='';
+    }
+    if(e.key==='Enter' && e.target.id==='pinQuickInput'){
+      e.preventDefault();
+      if(e.target.value.trim()){ addRow('pins', { text: e.target.value.trim(), done:false }); e.target.value=''; }
     }
   });
 

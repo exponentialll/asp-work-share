@@ -22,12 +22,42 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD 
 .sync-dot.on{background:#3fa15e;}
 .sync-label{font-size:11px;color:var(--text-light);}
 
-.tabs{display:flex;gap:2px;padding:0 22px;background:#fff;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+.tabs{display:flex;gap:2px;background:#fff;border-bottom:1px solid var(--border);flex-wrap:wrap;}
 .tab-btn{border:none;background:none;padding:12px 14px;font-size:13px;color:var(--text-light);cursor:pointer;border-bottom:2px solid transparent;font-weight:600;white-space:nowrap;}
 .tab-btn:hover{color:var(--text);}
 .tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);}
 
-main{max-width:1440px;margin:0 auto;padding:20px 22px 60px;}
+/* 전체 레이아웃: 좌측 사이드바(미니캘린더·D-day·메모) + 우측 메인 콘텐츠 */
+.app-body{max-width:1640px;margin:0 auto;padding:18px 22px 60px;display:flex;align-items:flex-start;gap:20px;}
+.sidebar{width:230px;flex-shrink:0;position:sticky;top:16px;display:flex;flex-direction:column;gap:14px;}
+.app-main{flex:1;min-width:0;}
+main{padding:0;}
+
+.sidebar-card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:14px;}
+.sidebar-card-head{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;font-weight:700;margin-bottom:10px;color:var(--text);}
+.sidebar-empty{font-size:11.5px;color:var(--text-light);padding:8px 0;text-align:center;}
+.sidebar-cal-more{width:100%;margin-top:8px;}
+
+/* 미니 캘린더 */
+.mini-cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+.mini-cal-wd{text-align:center;color:var(--text-light);font-size:9.5px;font-weight:700;padding:2px 0;}
+.mini-cal-day{position:relative;text-align:center;font-size:11px;color:var(--text);padding:5px 0;border-radius:6px;cursor:pointer;}
+.mini-cal-day:hover{background:#f4f5f9;}
+.mini-cal-day.empty{cursor:default;}
+.mini-cal-day.empty:hover{background:none;}
+.mini-cal-day.today{background:var(--primary);color:#fff;font-weight:700;}
+.mini-cal-day.selected{outline:1.5px solid var(--primary);}
+.mini-cal-dot{position:absolute;bottom:1px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:var(--primary);}
+.mini-cal-day.today .mini-cal-dot{background:#fff;}
+
+/* 사이드바 안의 D-day / 메모 */
+.sidebar-dday-row{padding:6px 2px;}
+.sidebar-dday-row .dday-title-input{font-size:12px;}
+.pin-row{display:flex;align-items:center;gap:7px;padding:5px 2px;font-size:12.5px;}
+.pin-row.done .pin-text{color:var(--text-light);text-decoration:line-through;}
+.pin-text{flex:1;color:var(--text);word-break:break-word;}
+.pin-add-row{display:flex;gap:6px;margin-top:8px;}
+.pin-add-row input{flex:1;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px;}
 
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:16px;}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
@@ -74,7 +104,9 @@ td textarea{resize:none;min-height:40px;overflow:hidden;}
 .cell-check-group{display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;align-items:center;}
 .cell-check-group label{display:flex;align-items:center;gap:4px;white-space:nowrap;}
 .status-select{font-weight:700;border-radius:999px !important;text-align:center;padding:6px 10px !important;font-size:12.5px;}
-.minor-select{width:auto;min-width:80px;}
+.task-title-cell{display:flex;align-items:center;gap:8px;}
+.minor-select{width:auto;min-width:64px;flex-shrink:0;}
+.task-title-cell .cell-title-input{flex:1;min-width:0;}
 .date-range{display:flex;align-items:center;gap:6px;white-space:nowrap;}
 .date-range input[type=date]{font-size:12.5px;padding:6px !important;}
 .date-arrow{color:var(--text-light);font-size:11px;flex-shrink:0;}
@@ -100,20 +132,40 @@ td textarea{resize:none;min-height:40px;overflow:hidden;}
 .filelink-details summary::-webkit-details-marker{display:none;}
 .filelink-details[open] summary{margin-bottom:6px;}
 
-.manual-item .manual-content{min-height:120px;}
+.manual-content{min-height:160px;}
+.manual-file-count{font-size:11px;color:var(--text-light);}
 
-/* 업무매뉴얼: 목록형(접이식) — 여러 개를 등록해도 제목만 쭉 보이고, 클릭하면 펼쳐집니다 */
-.manual-list-item{border:1px solid var(--border);border-radius:10px;margin-bottom:8px;overflow:hidden;}
-.manual-summary{display:flex;align-items:center;gap:9px;padding:12px 14px;cursor:pointer;list-style:none;font-size:13.5px;font-weight:600;}
-.manual-summary::-webkit-details-marker{display:none;}
-.manual-summary:hover{background:#fafbfd;}
-.manual-summary-title{flex:1;color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
-.manual-file-count{font-size:11px;color:var(--text-light);flex-shrink:0;}
-.manual-arrow{font-size:10px;color:var(--text-light);width:10px;display:inline-block;transition:transform .15s;flex-shrink:0;}
-.manual-list-item[open] .manual-arrow{transform:rotate(90deg);}
-.manual-list-item[open] .manual-summary{border-bottom:1px solid var(--border);}
-.manual-detail{padding:14px;}
-.manual-detail .manual-content{min-height:120px;}
+/* 대분류 탭 / 시트 탭 (업무 리스트, 각자 업무리스트) */
+.subtab-bar{display:flex;gap:7px;flex-wrap:wrap;margin:2px 0 14px;}
+.subtab-btn{border:1px solid var(--border);background:#fff;border-radius:999px;padding:7px 14px;font-size:12.5px;font-weight:700;cursor:pointer;color:var(--text-light);}
+.subtab-btn:hover{border-color:var(--primary);color:var(--primary);}
+.subtab-count{font-weight:400;opacity:.75;font-size:11px;}
+.sheet-tab-bar{display:flex;gap:4px;margin:2px 0 0;}
+.sheet-tab{border-radius:8px 8px 0 0;border-bottom:none;}
+
+/* 업무매뉴얼: 게시판(목록) 형식 — 제목을 클릭하면 상세 화면으로 이동 */
+.board-table{width:100%;border-collapse:collapse;font-size:13.5px;}
+.board-table th{text-align:left;color:var(--text-light);font-weight:600;font-size:12px;padding:9px 10px;border-bottom:1px solid var(--border);}
+.board-table td{padding:11px 10px;border-bottom:1px solid #f0f0f2;}
+.board-row{cursor:pointer;}
+.board-row:hover td{background:#fafbfd;}
+.board-title-cell{font-weight:600;color:var(--text);}
+
+/* ASP 정기업무 현황 (체크리스트) */
+.recur-progress{font-size:12.5px;color:var(--text-light);font-weight:600;}
+.recur-group{margin-bottom:16px;}
+.recur-group-head{display:flex;align-items:center;gap:10px;margin-bottom:8px;}
+.recur-period-label{font-size:12px;color:var(--text-light);flex:1;}
+.recur-row{display:flex;align-items:center;gap:10px;padding:9px 4px;border-bottom:1px solid #f0f0f2;}
+.recur-row:last-of-type{border-bottom:none;}
+.recur-row.done .recur-title-input{color:var(--text-light);text-decoration:line-through;}
+.recur-toggle{border:none;background:none;cursor:pointer;font-size:16px;padding:2px 4px;flex-shrink:0;}
+.recur-title-input{flex:1;border:1px solid transparent;background:transparent;padding:6px 8px;border-radius:6px;font-size:13.5px;color:var(--text);}
+.recur-title-input:hover{border-color:var(--border);}
+.recur-title-input:focus{border-color:var(--primary);background:#fff;outline:none;}
+
+/* 파일 업로드 버튼 줄 */
+.filelink-actions{display:flex;gap:6px;margin-top:4px;}
 
 /* 업무 리스트 비고/댓글 */
 .comments-box{width:220px;max-width:60vw;}
@@ -199,4 +251,10 @@ td textarea{resize:none;min-height:40px;overflow:hidden;}
   th{display:none;}
   td{border-bottom:none;padding:3px 0;}
   tr{border-bottom:1px solid var(--border);padding:10px 0;margin-bottom:8px;display:block;}
+}
+
+@media (max-width:960px){
+  .app-body{flex-direction:column;}
+  .sidebar{width:100%;position:static;flex-direction:row;flex-wrap:wrap;}
+  .sidebar-card{flex:1;min-width:220px;}
 }
