@@ -14,7 +14,7 @@
   var STATUSES = ['진행 중','시작 전','완료'];
   var STATUS_ORDER = { '진행 중':0, '시작 전':1, '완료':2 };
   var PEOPLE = ['지수','다경'];
-  var COMM_WORK_CATS = ['처방검토','중재(Intervention)','TDM','상담/교육','회의','데이터/통계','서류/행정','인사','기타'];
+  var COMM_WORK_CATS = ['처방검토','중재','TDM','상담/교육','회의','데이터/통계','서류/행정','인사','기타'];
   var COMM_DIRECTIONS = ['발신','수신','양방향'];
   var COMM_DEPTS = ['간호팀','전산팀','질병청','ASP사무국','인재경영팀','약제팀','기타'];
   var IDEA_STATUSES = ['검토중','채택','보류'];
@@ -309,7 +309,7 @@
         onDataChanged(TAB_FOR_COLLECTION[col]);
         if(col==='meetings') ensureWeeklyMeeting();
         if(col==='tasks') ensureNotionImport();
-        if(col==='comms') ensureNotionCommsImport();
+        if(col==='comms'){ ensureNotionCommsImport(); migrateCommsWorkCategoryLabel(); }
         if(col==='personal') ensureNotionPersonalImport();
         if(col==='manuals') migrateRemovedManualCategory();
       }, handleSnapError);
@@ -323,6 +323,16 @@
     state.manuals.forEach(function(m){
       if(m.category === '개인 공부'){
         db.collection('manuals').doc(m.id).update({ category:'기타' }).catch(function(err){ console.error(err); });
+      }
+    });
+  }
+  // "중재(Intervention)" 업무분류 이름을 "중재"로 짧게 바꿨는데, 이미 그 이름으로 저장된 소통일지 기록이
+  // 있으면 목록 어디에도 안 걸려서 드롭다운이 이상하게 보일 수 있어요. 자동으로 새 이름으로 옮겨줍니다.
+  function migrateCommsWorkCategoryLabel(){
+    if(!db) return;
+    state.comms.forEach(function(c){
+      if(c.workCategory === '중재(Intervention)'){
+        db.collection('comms').doc(c.id).update({ workCategory:'중재' }).catch(function(err){ console.error(err); });
       }
     });
   }
@@ -391,7 +401,7 @@
     db.collection('meta').doc(markerId).get().then(function(snap){
       if(snap.exists) return;
       var items = [
-        { slug:'2026-08-11-jeonsan-1', date:'2026-08-11', dept:'전산팀', workCategory:'중재(Intervention)', target:'고석길 대리', content:'2번 중재에서 IERPE 외래 처방이 잡히는거 해결됨 (08/14 이후로)', direction:'양방향', ext:'', participants:['지수'] },
+        { slug:'2026-08-11-jeonsan-1', date:'2026-08-11', dept:'전산팀', workCategory:'중재', target:'고석길 대리', content:'2번 중재에서 IERPE 외래 처방이 잡히는거 해결됨 (08/14 이후로)', direction:'양방향', ext:'', participants:['지수'] },
         { slug:'2026-08-18-nurse-micu', date:'2026-08-18', dept:'간호팀', workCategory:'TDM', target:'MICU 간호사', content:'김정숙(06001138)환자 12:00 투약인데, 11:37 약물농도 검사 접수됨', direction:'발신', ext:'2453', participants:['지수'] },
         { slug:'2026-08-19-nurse-12', date:'2026-08-19', dept:'간호팀', workCategory:'TDM', target:'12병동 간호사', content:'이강진 환자 체중 미기재로 체중 물어봄 → bed-ridden 상태로 체중 측정 어려움 확인', direction:'발신', ext:'2424', participants:['지수'] },
         { slug:'2026-08-24-jeonsan-2', date:'2026-08-24', dept:'전산팀', workCategory:'서류/행정', target:'고석길 대리', content:'질병청 항생제별 DOT 자료매매 연락함', direction:'발신', ext:'', participants:['지수'] },
@@ -400,7 +410,7 @@
         { slug:'2026-08-25-pharm', date:'2026-08-25', dept:'약제팀', workCategory:'서류/행정', target:'김은비 주임', content:'6,7월 제한항생제 사용량 파일 달라고해서 줌(항생제 소위원회)', direction:'수신', ext:'', participants:['지수'] },
         { slug:'2026-08-25-nurse-12-vanco', date:'2026-08-25', dept:'간호팀', workCategory:'TDM', target:'12병동 간호사', content:'88087385 환자 VANCO TDM 빨리 해달라고 요청받음.', direction:'수신', ext:'', participants:['지수','다경'], note:'이후 완료됨을 노티함.' },
         { slug:'2026-08-27-nurse-14-vanco', date:'2026-08-27', dept:'간호팀', workCategory:'TDM', target:'14병동 간호사', content:'24169957 환자 VANCO TDM 빨리 해달라고 요청받음.', direction:'수신', ext:'', participants:['지수'], note:'노티보다는 메신저를 더 잘... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)' },
-        { slug:'2026-08-31-jeonsan-3', date:'2026-08-31', dept:'전산팀', workCategory:'중재(Intervention)', target:'고석길 대리', content:'고석길 대리님 안녕하세요! [ASP 대상관리] 탭 관련 문의드립니다. 최근... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)', direction:'발신', ext:'', participants:['지수'], note:'답변 : 그냥 중복해서 중재걸... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)' },
+        { slug:'2026-08-31-jeonsan-3', date:'2026-08-31', dept:'전산팀', workCategory:'중재', target:'고석길 대리', content:'고석길 대리님 안녕하세요! [ASP 대상관리] 탭 관련 문의드립니다. 최근... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)', direction:'발신', ext:'', participants:['지수'], note:'답변 : 그냥 중복해서 중재걸... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)' },
         { slug:'2026-08-31-hr', date:'2026-08-31', dept:'인재경영팀', workCategory:'인사', target:'이경환 대리', content:'1. 전담팀에 신규 인원(우리) 등록/결재 올라간 소식 2. 비품: 청구하는... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)', direction:'수신', ext:'', participants:['지수','다경'] },
         { slug:'2026-09-02-pharm-2', date:'2026-09-02', dept:'약제팀', workCategory:'서류/행정', target:'김은비 약사', content:'7월 EDW 자료 약품 출고금액/ 항생제 출고금액 관련해서 올려오시기... (노션 원본이 잘려서 이어지는 내용은 노션에서 확인해주세요)', direction:'수신', ext:'', participants:['지수'] },
         { slug:'2026-09-02-nurse-13-teico', date:'2026-09-02', dept:'간호팀', workCategory:'TDM', target:'13병동 간호사', content:'05020447 환자 TEICO trough 40 이상으로 독성 우려되어 추가 연락', direction:'발신', ext:'메신저', participants:['지수'] },
@@ -683,7 +693,8 @@
     taskShowRecurringPanel: false,
     personalActiveOwner: PEOPLE[0],
     personalDeadlineOpen: {},
-    personalGroupByCat: false,
+    personalSortField: null,
+    personalSortDir: 'asc',
     personalHideCompleted: false,
     manualActiveCat: MANUAL_CATS[0],
     manualActiveId: null,
@@ -1021,26 +1032,32 @@
   }
   function sortTasks(items){
     var field = state.taskSortField;
+    var sorted;
     if(!field){
-      // "행정" 탭은 기본 정렬도 월별→분기→반기→연간→비정기 순으로 보여줘요.
+      // 기본 정렬은 진행도(진행 중 → 시작 전 → 완료)가 최우선이에요.
+      // "행정" 탭에서는 같은 진행도 안에서 월별→분기→반기→연간→비정기 순으로 한 번 더 나눠 보여줘요.
       var isAdminTab = state.taskActiveMajor==='행정';
-      return items.slice().sort(function(a,b){
+      sorted = items.slice().sort(function(a,b){
+        var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
+        if(so!==0) return so;
         if(isAdminTab){
           var mo = minorSortIndex(a) - minorSortIndex(b);
           if(mo!==0) return mo;
         }
-        var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
-        if(so!==0) return so;
         return (b.clientTs||0)-(a.clientTs||0);
       });
+    } else {
+      var dir = state.taskSortDir==='desc' ? -1 : 1;
+      sorted = items.slice().sort(function(a,b){
+        var av = taskSortValue(a, field), bv = taskSortValue(b, field);
+        if(av<bv) return -1*dir;
+        if(av>bv) return 1*dir;
+        return 0;
+      });
     }
-    var dir = state.taskSortDir==='desc' ? -1 : 1;
-    return items.slice().sort(function(a,b){
-      var av = taskSortValue(a, field), bv = taskSortValue(b, field);
-      if(av<bv) return -1*dir;
-      if(av>bv) return 1*dir;
-      return 0;
-    });
+    // 별표(중요) 표시한 업무는 정렬 기준과 상관없이 항상 맨 위로 올라와요.
+    // Array.sort는 안정 정렬이라 이 두 번째 정렬로도 위에서 정한 순서는 그대로 유지됩니다.
+    return sorted.sort(function(a,b){ return (b.important?1:0) - (a.important?1:0); });
   }
   function sortArrow(field){
     if(state.taskSortField!==field) return '';
@@ -1069,11 +1086,12 @@
     }).join('');
 
     var headRow = '<tr>'+
+      '<th style="min-width:28px"></th>'+
       (showMajorCol ? '<th style="min-width:56px">분류</th>' : '')+
       '<th data-action="sort-tasks" data-field="minor" class="sortable-th" style="min-width:280px">업무 (소분류 · 업무명)'+sortArrow('minor')+'</th>'+
       '<th style="min-width:260px">내용</th>'+
       '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:110px">날짜'+sortArrow('date')+'</th>'+
-      '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:85px">담당자'+sortArrow('assignees')+'</th>'+
+      '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:74px">담당자'+sortArrow('assignees')+'</th>'+
       '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:100px">진행도'+sortArrow('status')+'</th>'+
       '<th style="min-width:70px">비고</th>'+
       '<th style="min-width:70px">첨부</th><th></th>'+
@@ -1130,6 +1148,7 @@
         : '<button type="button" class="btn ghost sm" data-action="show-task-enddate" data-id="'+t.id+'">+ 마감일</button>');
     var fileCount = (t.files||[]).length;
     return '<tr data-id="'+t.id+'">'+
+      '<td><button type="button" class="icon-btn star-btn'+(t.important?' active':'')+'" data-action="toggle-task-important" data-id="'+t.id+'" title="'+(t.important?'중요 표시 해제':'중요 표시(항상 위로)')+'">'+(t.important?'★':'☆')+'</button></td>'+
       (showMajorCol ? '<td>'+badge(t.major||'미분류', CAT_COLORS)+'</td>' : '')+
       '<td><div class="task-title-cell">'+
         '<select class="status-select minor-select" data-collection="tasks" data-id="'+t.id+'" data-field="minor" style="background:'+mnc.bg+';color:'+mnc.fg+';">'+minorOpts+'</select>'+
@@ -1137,7 +1156,7 @@
       '</div></td>'+
       '<td><textarea class="cell-textarea" placeholder="내용/메모" data-collection="tasks" data-id="'+t.id+'" data-field="content">'+escapeHtml(t.content||'')+'</textarea></td>'+
       '<td><div class="date-range">'+dateHtml+'</div></td>'+
-      '<td><select class="status-select-sm" data-collection="tasks" data-id="'+t.id+'" data-field="assigneesSelect">'+assigneeOpts+'</select></td>'+
+      '<td><select class="status-select-sm assignee-select-sm" data-collection="tasks" data-id="'+t.id+'" data-field="assigneesSelect">'+assigneeOpts+'</select></td>'+
       '<td><select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
       '<td><details class="filelink-details"><summary>📝'+((t.comments||[]).length?' '+t.comments.length:'')+'</summary>'+renderComments('tasks', t)+'</details></td>'+
       '<td><details class="filelink-details"><summary>📎'+(fileCount?' '+fileCount:'')+'</summary>'+renderFileLinks('tasks', t)+'</details></td>'+
@@ -1152,11 +1171,18 @@
     var items = state.personal.filter(function(p){ return p.owner===owner; })
       .filter(function(p){ return !state.personalHideCompleted || p.status!=='완료'; })
       .sort(function(a,b){
-        if(state.personalGroupByCat){
-          var ac = catOrder.indexOf(a.category||''), bc = catOrder.indexOf(b.category||'');
-          if(ac===-1) ac = catOrder.length;
-          if(bc===-1) bc = catOrder.length;
-          if(ac!==bc) return ac-bc;
+        if(state.personalSortField){
+          var av, bv;
+          if(state.personalSortField==='category'){
+            av = catOrder.indexOf(a.category||''); bv = catOrder.indexOf(b.category||'');
+            if(av===-1) av = catOrder.length;
+            if(bv===-1) bv = catOrder.length;
+          } else if(state.personalSortField==='status'){
+            av = STATUS_ORDER[a.status]===undefined ? 9 : STATUS_ORDER[a.status];
+            bv = STATUS_ORDER[b.status]===undefined ? 9 : STATUS_ORDER[b.status];
+          }
+          var dir = state.personalSortDir==='desc' ? -1 : 1;
+          if(av!==bv) return (av<bv ? -1 : 1)*dir;
         }
         var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
         if(so!==0) return so;
@@ -1170,9 +1196,12 @@
       var cnt = state.personal.filter(function(x){ return x.owner===p; }).length;
       return '<button class="subtab-btn sheet-tab" data-action="personal-set-owner" data-owner="'+p+'" style="'+style+'">'+p+' <span class="subtab-count">'+cnt+'</span></button>';
     }).join('');
-    // 분류 색깔만으로는 비슷한 색이 나올 수 있어 구분이 잘 안 될 때가 있어서,
-    // "분류" 열 제목을 누르면 같은 분류끼리 모아서 볼 수 있게 정렬 토글을 추가했어요.
-    var catThLabel = '분류'+(state.personalGroupByCat ? ' ▾' : '');
+    // 분류 색깔만으로는 비슷한 색이 나올 수 있어 구분이 잘 안 될 때가 있어서, "분류"나 "진행도" 열
+    // 제목을 누르면 그 기준으로 모아서/순서대로 볼 수 있게 정렬 토글을 붙였어요.
+    function personalSortArrow(field){
+      if(state.personalSortField!==field) return '';
+      return state.personalSortDir==='asc' ? ' ▲' : ' ▼';
+    }
     return '<div class="card">'+
       '<div class="card-head"><h3>🙋 개별 업무리스트</h3>'+
         '<div class="toolbar">'+
@@ -1182,7 +1211,11 @@
       '</div>'+
       '<div class="sheet-tab-bar">'+tabsHtml+'</div>'+
       (items.length ?
-        '<div class="table-scroll"><table><thead><tr><th data-action="sort-personal-cat" class="sortable-th" style="min-width:92px">'+catThLabel+'</th><th style="min-width:130px">이름</th><th style="min-width:220px">업무</th><th style="min-width:110px">진행도</th><th style="min-width:140px">시작</th><th style="min-width:150px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
+        '<div class="table-scroll"><table><thead><tr>'+
+        '<th data-action="sort-personal" data-field="category" class="sortable-th" style="min-width:92px">분류'+personalSortArrow('category')+'</th>'+
+        '<th style="min-width:130px">이름</th><th style="min-width:260px">업무</th>'+
+        '<th data-action="sort-personal" data-field="status" class="sortable-th" style="min-width:110px">진행도'+personalSortArrow('status')+'</th>'+
+        '<th style="min-width:96px">시작</th><th style="min-width:96px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
         '<tbody>'+rows+'</tbody></table></div>'
         : '<div class="empty-state">등록된 업무가 없습니다. "+ 추가"를 눌러 지금 하고 있는 공부/업무를 기록해보세요.</div>')+
     '</div>';
@@ -1196,7 +1229,7 @@
     var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
     var showDeadline = !!p.deadline || !!state.personalDeadlineOpen[p.id];
     var deadlineHtml = showDeadline ?
-      '<input type="date" data-collection="personal" data-id="'+p.id+'" data-field="deadline" value="'+escapeHtml(p.deadline||'')+'">'
+      renderCompactDateField('personal', p.id, 'deadline', p.deadline, '마감일')
       : '<button type="button" class="btn ghost sm" data-action="show-personal-deadline" data-id="'+p.id+'">+ 마감일</button>';
     var fileCount = (p.files||[]).length;
     return '<tr data-id="'+p.id+'">'+
@@ -1204,7 +1237,7 @@
       '<td><input type="text" class="cell-title-input" placeholder="이름" data-collection="personal" data-id="'+p.id+'" data-field="title" value="'+escapeHtml(p.title||'')+'"></td>'+
       '<td><textarea class="cell-textarea" placeholder="업무 내용" data-collection="personal" data-id="'+p.id+'" data-field="content">'+escapeHtml(p.content||'')+'</textarea></td>'+
       '<td><select class="status-select" data-collection="personal" data-id="'+p.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
-      '<td><input type="date" data-collection="personal" data-id="'+p.id+'" data-field="startDate" value="'+escapeHtml(p.startDate||'')+'"></td>'+
+      '<td>'+renderCompactDateField('personal', p.id, 'startDate', p.startDate, '+ 날짜')+'</td>'+
       '<td>'+deadlineHtml+'</td>'+
       '<td style="text-align:center;"><input type="checkbox" data-collection="personal" data-id="'+p.id+'" data-field="followUp"'+(p.followUp?' checked':'')+'></td>'+
       '<td><textarea class="cell-textarea" placeholder="비고" data-collection="personal" data-id="'+p.id+'" data-field="note">'+escapeHtml(p.note||'')+'</textarea></td>'+
@@ -1544,7 +1577,12 @@
         renderActiveTab();
       });
     }
-    else if(action==='add-task') addRow('tasks', { major:(state.taskActiveMajor==='전체'?MAJOR_CATS[0]:state.taskActiveMajor), minor:'', title:'', date:todayStr(), endDate:'', status:'시작 전', content:'', assignees:PEOPLE.slice(), comments:[], files:[] });
+    else if(action==='add-task') addRow('tasks', { major:(state.taskActiveMajor==='전체'?MAJOR_CATS[0]:state.taskActiveMajor), minor:'', title:'', date:todayStr(), endDate:'', status:'시작 전', content:'', assignees:PEOPLE.slice(), comments:[], files:[], important:false });
+    else if(action==='toggle-task-important'){
+      if(!requireFirebase()) return;
+      var curTask = state.tasks.find(function(x){ return x.id===el.dataset.id; });
+      flushSaveNow('tasks', el.dataset.id, 'important', !(curTask && curTask.important));
+    }
     else if(action==='add-personal') addRow('personal', { owner:el.dataset.owner, category:'', title:'', content:'', status:'시작 전', startDate:'', deadline:'', followUp:false, note:'', files:[] });
     else if(action==='add-meeting'){
       var mType = el.dataset.type || state.meetingActiveType || MEETING_TYPES[0];
@@ -1682,8 +1720,10 @@
       else { state.commSortField = cf; state.commSortDir = 'asc'; }
       renderActiveTab();
     }
-    else if(action==='sort-personal-cat'){
-      state.personalGroupByCat = !state.personalGroupByCat;
+    else if(action==='sort-personal'){
+      var pf = el.dataset.field;
+      if(state.personalSortField===pf){ state.personalSortDir = state.personalSortDir==='asc' ? 'desc' : 'asc'; }
+      else { state.personalSortField = pf; state.personalSortDir = 'asc'; }
       renderActiveTab();
     }
     else if(action==='toggle-person'){
