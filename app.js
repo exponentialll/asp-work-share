@@ -1100,11 +1100,13 @@ var headRow = '<tr>'+
       (showMajorCol ? '<th style="min-width:56px">분류</th>' : '')+
       '<th data-action="sort-tasks" data-field="minor" class="sortable-th" style="min-width:280px">업무 (소분류 · 업무명)'+sortArrow('minor')+'</th>'+
       '<th style="min-width:260px">내용</th>'+
-      '<th style="min-width:70px">비고</th>'+ /* 비고 열을 내용 오른쪽으로 이동 */
+      '<th style="min-width:70px">비고</th>'+
       '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:180px">날짜'+sortArrow('date')+'</th>'+
       '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:110px">담당자'+sortArrow('assignees')+'</th>'+
       '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:118px">진행도'+sortArrow('status')+'</th>'+
-      '<th style="min-width:70px">첨부</th><th></th>'+
+      '<th style="min-width:70px">첨부</th>'+
+      '<th style="min-width:40px">중요</th>'+ /* 첨부 오른쪽으로 이동 */
+      '<th></th>'+
     '</tr>';
 
     var tableHtml = sorted.length ?
@@ -1159,18 +1161,19 @@ function renderTaskRow(t, showMajorCol){
     var fileCount = (t.files||[]).length;
     var starBtn = '<button type="button" class="icon-btn star-btn'+(t.important?' active':'')+'" data-action="toggle-task-important" data-id="'+t.id+'" title="'+(t.important?'중요 표시 해제':'중요 표시(항상 위로)')+'">'+(t.important?'★':'☆')+'</button>';
 
-    return '<tr data-id="'+t.id+'">'+
+return '<tr data-id="'+t.id+'">'+
       (showMajorCol ? '<td>'+badge(t.major||'미분류', CAT_COLORS)+'</td>' : '')+
       '<td><div class="task-title-cell">'+
         '<select class="status-select minor-select" data-collection="tasks" data-id="'+t.id+'" data-field="minor" style="background:'+mnc.bg+';color:'+mnc.fg+';">'+minorOpts+'</select>'+
         '<input type="text" class="cell-title-input" placeholder="업무명" data-collection="tasks" data-id="'+t.id+'" data-field="title" value="'+escapeHtml(t.title||'')+'">'+
       '</div></td>'+
       '<td><textarea class="cell-textarea" placeholder="내용/메모" data-collection="tasks" data-id="'+t.id+'" data-field="content">'+escapeHtml(t.content||'')+'</textarea></td>'+
-      '<td><details class="filelink-details"><summary>📝'+((t.comments||[]).length?' '+t.comments.length:'')+'</summary>'+renderComments('tasks', t)+'</details></td>'+ /* 비고 위치 변경 */
+      '<td><details class="filelink-details"><summary>📝'+((t.comments||[]).length?' '+t.comments.length:'')+'</summary>'+renderComments('tasks', t)+'</details></td>'+
       '<td><div class="date-range">'+dateHtml+'</div></td>'+
       '<td><select class="status-select-sm assignee-select-sm" data-collection="tasks" data-id="'+t.id+'" data-field="assigneesSelect">'+assigneeOpts+'</select></td>'+
-      '<td><div class="status-cell"><select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select>'+starBtn+'</div></td>'+ /* 진행도 오른쪽으로 별 버튼 이동 */
+      '<td><select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+ /* 진행도 단독 */
       '<td><details class="filelink-details"><summary>📎'+(fileCount?' '+fileCount:'')+'</summary>'+renderFileLinks('tasks', t)+'</details></td>'+
+      '<td>'+starBtn+'</td>'+ /* 첨부 오른쪽으로 별 이동 */
       '<td><button class="icon-btn danger" data-action="del-row" data-collection="tasks" data-id="'+t.id+'" title="삭제">✕</button></td>'+
     '</tr>';
   }
