@@ -1370,9 +1370,9 @@ function renderTaskRow(t, showMajorCol){
       '</div>'+
       '<div class="table-scroll"><table><thead><tr>'+
       '<th style="min-width:130px">날짜</th>'+
-      '<th data-action="sort-comms" data-field="dept" class="sortable-th" style="min-width:120px">분류'+commSortArrow('dept')+'</th>'+
-      '<th data-action="sort-comms" data-field="workCategory" class="sortable-th" style="min-width:140px">업무'+commSortArrow('workCategory')+'</th>'+
-      '<th style="min-width:60px">대상</th><th style="min-width:300px">소통내역</th><th style="min-width:80px">수신/발신</th>'+
+      '<th data-action="sort-comms" data-field="dept" class="sortable-th" style="min-width:100px">분류'+commSortArrow('dept')+'</th>'+
+'<th data-action="sort-comms" data-field="workCategory" class="sortable-th" style="min-width:95px">업무'+commSortArrow('workCategory')+'</th>'+
+'<th style="min-width:115px">대상</th>'<th style="min-width:300px">소통내역</th><th style="min-width:80px">수신/발신</th>'+
       '<th style="min-width:56px">전화번호</th><th style="min-width:100px">사람</th><th style="min-width:150px">비고</th><th>첨부</th><th></th></tr></thead>'+
       '<tbody>'+(rows||'')+'</tbody></table></div>'+
       (rows ? '' : '<div class="empty-state">등록된 소통 기록이 없습니다.</div>')+
