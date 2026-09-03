@@ -101,6 +101,15 @@
     '필수':  { fg:'#b8860b', bg:'#fdf3d6' },
     '비정기':{ fg:'#9a9a9a', bg:'#f0f0f0' }
   };
+  // 개별 업무리스트 분류는 자동 해시 색상(hashColor)을 쓰면 서로 비슷한 색이 우연히 겹칠 수 있어서,
+  // 다른 분류들처럼 눈에 띄게 구분되는 고정 색상을 지정했어요. 목록에 없는 분류(직접 추가한 것)만 hashColor로 보완합니다.
+  var PERSONAL_CAT_COLORS = {
+    '회의':   { fg:'#3b7dd8', bg:'#e8f0fd' },
+    '교육':   { fg:'#7d7d7d', bg:'#efefef' },
+    'TDM':    { fg:'#3fa15e', bg:'#e9f7ee' },
+    '개인공부': { fg:'#c9527a', bg:'#fbe4ed' },
+    '기타':   { fg:'#9a9a9a', bg:'#f0f0f0' }
+  };
   var CADENCE_COLORS = {
     '매일':   MINOR_CAT_COLORS['일간'],
     '주간':   MINOR_CAT_COLORS['주간'],
@@ -656,6 +665,7 @@
     personalActiveOwner: PEOPLE[0],
     personalDeadlineOpen: {},
     personalGroupByCat: false,
+    personalHideCompleted: false,
     manualActiveCat: MANUAL_CATS[0],
     manualActiveId: null,
     manualActiveCadence: 'all',
@@ -979,16 +989,29 @@
   }
 
   /* ================= 📋 업무 리스트 (대분류별 탭 + 전체 보기) ================= */
+  // 소분류 정렬 순서: 행정 업무는 월별→분기→반기→연간→비정기 순으로, 그 외는 일반 소분류 순서로 비교해요.
+  function minorSortIndex(t){
+    var order = (t.major||MAJOR_CATS[0])==='행정' ? ADMIN_MINOR_CATS : MINOR_CATS;
+    var idx = order.indexOf(t.minor||'');
+    return idx===-1 ? order.length : idx;
+  }
   function taskSortValue(t, field){
     if(field==='date') return t.date || '';
     if(field==='status') return STATUS_ORDER[t.status]===undefined ? 9 : STATUS_ORDER[t.status];
     if(field==='assignees') return (t.assignees||[]).slice().sort().join(',');
+    if(field==='minor') return minorSortIndex(t);
     return '';
   }
   function sortTasks(items){
     var field = state.taskSortField;
     if(!field){
+      // "행정" 탭은 기본 정렬도 월별→분기→반기→연간→비정기 순으로 보여줘요.
+      var isAdminTab = state.taskActiveMajor==='행정';
       return items.slice().sort(function(a,b){
+        if(isAdminTab){
+          var mo = minorSortIndex(a) - minorSortIndex(b);
+          if(mo!==0) return mo;
+        }
         var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
         if(so!==0) return so;
         return (b.clientTs||0)-(a.clientTs||0);
@@ -1030,7 +1053,7 @@
 
     var headRow = '<tr>'+
       (showMajorCol ? '<th style="min-width:56px">분류</th>' : '')+
-      '<th style="min-width:280px">업무 (소분류 · 업무명)</th>'+
+      '<th data-action="sort-tasks" data-field="minor" class="sortable-th" style="min-width:280px">업무 (소분류 · 업무명)'+sortArrow('minor')+'</th>'+
       '<th style="min-width:200px">내용</th>'+
       '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:190px">날짜'+sortArrow('date')+'</th>'+
       '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:85px">담당자'+sortArrow('assignees')+'</th>'+
@@ -1111,6 +1134,7 @@
     var owner = state.personalActiveOwner || PEOPLE[0];
     var catOrder = personalCategoryOptions(null);
     var items = state.personal.filter(function(p){ return p.owner===owner; })
+      .filter(function(p){ return !state.personalHideCompleted || p.status!=='완료'; })
       .sort(function(a,b){
         if(state.personalGroupByCat){
           var ac = catOrder.indexOf(a.category||''), bc = catOrder.indexOf(b.category||'');
@@ -1134,7 +1158,12 @@
     // "분류" 열 제목을 누르면 같은 분류끼리 모아서 볼 수 있게 정렬 토글을 추가했어요.
     var catThLabel = '분류'+(state.personalGroupByCat ? ' ▾' : '');
     return '<div class="card">'+
-      '<div class="card-head"><h3>🙋 개별 업무리스트</h3><button class="btn" data-action="add-personal" data-owner="'+owner+'">+ 추가</button></div>'+
+      '<div class="card-head"><h3>🙋 개별 업무리스트</h3>'+
+        '<div class="toolbar">'+
+          '<label class="hide-done-toggle"><input type="checkbox" id="personalHideCompletedToggle"'+(state.personalHideCompleted?' checked':'')+'> 완료 항목 숨기기</label>'+
+          '<button class="btn" data-action="add-personal" data-owner="'+owner+'">+ 추가</button>'+
+        '</div>'+
+      '</div>'+
       '<div class="sheet-tab-bar">'+tabsHtml+'</div>'+
       '<div class="table-hint">"분류" 열 제목을 누르면 같은 분류끼리 모아서 볼 수 있어요.</div>'+
       (items.length ?
@@ -1146,7 +1175,7 @@
   function renderPersonalRow(p){
     var catOptions = personalCategoryOptions(p.category);
     var catOpts = catOptions.map(function(c){ return '<option value="'+c+'"'+(p.category===c?' selected':'')+'>'+c+'</option>'; }).join('') + '<option value="__new__">+ 직접 추가...</option>';
-    var tc = hashColor(p.category||'');
+    var tc = PERSONAL_CAT_COLORS[p.category] || (p.category ? hashColor(p.category) : {fg:'#888',bg:'#f0f0f0'});
     var curStatus = p.status || '시작 전';
     var sc = STATUS_COLORS[curStatus] || {fg:'#888',bg:'#eee'};
     var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
@@ -1278,8 +1307,8 @@
       '<th style="min-width:130px">날짜</th>'+
       '<th data-action="sort-comms" data-field="dept" class="sortable-th" style="min-width:120px">분류'+commSortArrow('dept')+'</th>'+
       '<th data-action="sort-comms" data-field="workCategory" class="sortable-th" style="min-width:140px">업무'+commSortArrow('workCategory')+'</th>'+
-      '<th style="min-width:85px">대상</th><th style="min-width:200px">소통내역</th><th style="min-width:100px">수신/발신</th>'+
-      '<th style="min-width:100px">전화번호</th><th style="min-width:100px">사람</th><th style="min-width:150px">비고</th><th>첨부</th><th></th></tr></thead>'+
+      '<th style="min-width:60px">대상</th><th style="min-width:150px">소통내역</th><th style="min-width:80px">수신/발신</th>'+
+      '<th style="min-width:64px">전화번호</th><th style="min-width:100px">사람</th><th style="min-width:150px">비고</th><th>첨부</th><th></th></tr></thead>'+
       '<tbody>'+(rows||'')+'</tbody></table></div>'+
       (rows ? '' : '<div class="empty-state">등록된 소통 기록이 없습니다.</div>')+
     '</div>';
@@ -1725,6 +1754,7 @@
     if(t.id==='filterPerson'){ state.taskFilterPerson = t.value; renderActiveTab(); return; }
     if(t.id==='filterStatus'){ state.taskFilterStatus = t.value; renderActiveTab(); return; }
     if(t.id==='hideCompletedToggle'){ state.taskHideCompleted = t.checked; renderActiveTab(); return; }
+    if(t.id==='personalHideCompletedToggle'){ state.personalHideCompleted = t.checked; renderActiveTab(); return; }
     if(t.id==='calFilterSelect'){ state.calFilter = t.value; renderActiveTab(); return; }
     if(t.type==='file' && t.classList.contains('filelink-upload-input')){
       if(t.files && t.files[0]){
@@ -1787,7 +1817,7 @@
       t.style.background = FILE_CAT_COLORS[val].bg; t.style.color = FILE_CAT_COLORS[val].fg;
     }
     if(t.dataset.field==='category' && t.dataset.collection==='personal' && val!=='__new__'){
-      var hc = hashColor(val);
+      var hc = PERSONAL_CAT_COLORS[val] || hashColor(val);
       t.style.background = hc.bg; t.style.color = hc.fg;
     }
   });
