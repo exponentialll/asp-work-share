@@ -106,7 +106,9 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
 .icon-btn{background:none;border:none;cursor:pointer;color:var(--text-light);font-size:13px;padding:3px 6px;border-radius:6px;}
 .icon-btn:hover{background:#f0f0f2;color:var(--text);}
 .icon-btn.danger:hover{color:var(--danger);}
-.star-btn{font-size:15px;color:#ccc;}
+.status-cell{display:flex;align-items:center;gap:2px;}
+.status-cell .status-select{flex:1;min-width:0;}
+.star-btn{font-size:14px;color:#ccc;padding:2px 1px;flex-shrink:0;}
 .star-btn.active{color:#e0a726;}
 .star-btn:hover{color:#e0a726;}
 
@@ -139,6 +141,9 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
 .date-hidden-input{position:absolute !important;left:0;top:0;width:1px !important;height:1px !important;opacity:0;pointer-events:none;border:0 !important;padding:0 !important;}
 .tag-input, .tag-select{border-radius:6px;font-weight:600;}
 .tag-select{width:92px !important;max-width:92px;padding:5px 16px 5px 6px !important;font-size:11.5px;white-space:nowrap;}
+/* <input type=text>도 select와 마찬가지로 %width는 표 자동 레이아웃 계산에서 무시되고 브라우저 기본 폭(약 170px)을
+   기준으로 칸이 넓어져요. 그래서 대상/전화번호 칸도 고정 px width로 명시해서 실제로 좁아지게 했어요. */
+.comm-narrow-input{width:52px !important;}
 
 /* 정렬 가능한 표 헤더 / 그룹 접기 */
 .sortable-th{cursor:pointer;user-select:none;}
@@ -237,7 +242,7 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
 .note-meta{font-size:11px;color:var(--text-light);margin-top:2px;}
 .status-select-sm{font-size:11.5px;border:1px solid var(--border);border-radius:999px;padding:3px 8px;background:#fff;color:var(--text-light);flex-shrink:0;}
 /* 담당자 select: "지수·다경" 글자가 다 보이는 선에서 최대한 좁혀요. */
-.status-select-sm.assignee-select-sm{width:72px !important;padding:3px 14px 3px 5px !important;font-size:11px;}
+.status-select-sm.assignee-select-sm{width:88px !important;padding:3px 16px 3px 6px !important;font-size:11.5px;}
 
 /* 각자 업무리스트 체크리스트 */
 .check-item{border:1px solid var(--border);border-left:4px solid #d5d5d5;border-radius:10px;padding:10px 12px;margin-bottom:8px;}

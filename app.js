@@ -12,7 +12,8 @@
   var ADMIN_MINOR_CATS = ['월별','분기','반기','연간','비정기'];
   // 드롭다운에서 위에서부터 보이는 순서예요. 실제 정렬 우선순위는 STATUS_ORDER를 따로 씁니다.
   var STATUSES = ['진행 중','시작 전','완료'];
-  var STATUS_ORDER = { '진행 중':0, '시작 전':1, '완료':2 };
+  // 예전에는 "진행중"(공백 없이)으로 저장된 데이터도 있어서, 정렬 시 그 값도 똑같이 0으로 인식하게 별칭을 같이 넣었어요.
+  var STATUS_ORDER = { '진행 중':0, '진행중':0, '시작 전':1, '완료':2 };
   var PEOPLE = ['지수','다경'];
   var COMM_WORK_CATS = ['처방검토','중재','TDM','상담/교육','회의','데이터/통계','서류/행정','인사','기타'];
   var COMM_DIRECTIONS = ['발신','수신','양방향'];
@@ -308,9 +309,9 @@
         state[STATE_KEY[col]] = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
         onDataChanged(TAB_FOR_COLLECTION[col]);
         if(col==='meetings') ensureWeeklyMeeting();
-        if(col==='tasks') ensureNotionImport();
+        if(col==='tasks'){ ensureNotionImport(); migrateLegacyStatusLabel('tasks', state.tasks); }
         if(col==='comms'){ ensureNotionCommsImport(); migrateCommsWorkCategoryLabel(); }
-        if(col==='personal') ensureNotionPersonalImport();
+        if(col==='personal'){ ensureNotionPersonalImport(); migrateLegacyStatusLabel('personal', state.personal); }
         if(col==='manuals') migrateRemovedManualCategory();
       }, handleSnapError);
     });
@@ -323,6 +324,16 @@
     state.manuals.forEach(function(m){
       if(m.category === '개인 공부'){
         db.collection('manuals').doc(m.id).update({ category:'기타' }).catch(function(err){ console.error(err); });
+      }
+    });
+  }
+  // 예전에 "진행중"(공백 없이)으로 저장된 업무/개별업무 기록은 뱃지 색은 맞게 보였지만 정렬 기준(STATUS_ORDER)에서는
+  // 매칭이 안 돼서 맨 뒤로 밀리는 문제가 있었어요. 발견되면 공백이 들어간 "진행 중"으로 자동 정리합니다.
+  function migrateLegacyStatusLabel(col, list){
+    if(!db) return;
+    list.forEach(function(item){
+      if(item.status === '진행중'){
+        db.collection(col).doc(item.id).update({ status:'진행 중' }).catch(function(err){ console.error(err); });
       }
     });
   }
@@ -1086,13 +1097,12 @@
     }).join('');
 
     var headRow = '<tr>'+
-      '<th style="min-width:28px"></th>'+
       (showMajorCol ? '<th style="min-width:56px">분류</th>' : '')+
       '<th data-action="sort-tasks" data-field="minor" class="sortable-th" style="min-width:280px">업무 (소분류 · 업무명)'+sortArrow('minor')+'</th>'+
       '<th style="min-width:260px">내용</th>'+
       '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:110px">날짜'+sortArrow('date')+'</th>'+
-      '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:74px">담당자'+sortArrow('assignees')+'</th>'+
-      '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:100px">진행도'+sortArrow('status')+'</th>'+
+      '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:90px">담당자'+sortArrow('assignees')+'</th>'+
+      '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:118px">진행도'+sortArrow('status')+'</th>'+
       '<th style="min-width:70px">비고</th>'+
       '<th style="min-width:70px">첨부</th><th></th>'+
     '</tr>';
@@ -1113,6 +1123,7 @@
           '<select id="filterPerson">'+personOpts+'</select>'+
           '<select id="filterStatus">'+statusOpts+'</select>'+
           '<label class="hide-done-toggle"><input type="checkbox" id="hideCompletedToggle"'+(state.taskHideCompleted?' checked':'')+'> 완료 항목 숨기기</label>'+
+          (state.taskSortField ? '<button class="btn ghost sm" data-action="reset-task-sort">↺ 정렬 초기화</button>' : '')+
           '<button class="btn ghost" data-action="toggle-recurring-panel">'+(state.taskShowRecurringPanel?'✅ 정기업무 닫기':'✅ 정기업무 현황')+'</button>'+
           '<button class="btn" data-action="add-task">+ 업무 추가</button>'+
         '</div>'+
@@ -1147,8 +1158,8 @@
         '<span class="date-arrow">→</span>'+renderCompactDateField('tasks', t.id, 'endDate', t.endDate, '마감일')
         : '<button type="button" class="btn ghost sm" data-action="show-task-enddate" data-id="'+t.id+'">+ 마감일</button>');
     var fileCount = (t.files||[]).length;
+    var starBtn = '<button type="button" class="icon-btn star-btn'+(t.important?' active':'')+'" data-action="toggle-task-important" data-id="'+t.id+'" title="'+(t.important?'중요 표시 해제':'중요 표시(항상 위로)')+'">'+(t.important?'★':'☆')+'</button>';
     return '<tr data-id="'+t.id+'">'+
-      '<td><button type="button" class="icon-btn star-btn'+(t.important?' active':'')+'" data-action="toggle-task-important" data-id="'+t.id+'" title="'+(t.important?'중요 표시 해제':'중요 표시(항상 위로)')+'">'+(t.important?'★':'☆')+'</button></td>'+
       (showMajorCol ? '<td>'+badge(t.major||'미분류', CAT_COLORS)+'</td>' : '')+
       '<td><div class="task-title-cell">'+
         '<select class="status-select minor-select" data-collection="tasks" data-id="'+t.id+'" data-field="minor" style="background:'+mnc.bg+';color:'+mnc.fg+';">'+minorOpts+'</select>'+
@@ -1157,7 +1168,7 @@
       '<td><textarea class="cell-textarea" placeholder="내용/메모" data-collection="tasks" data-id="'+t.id+'" data-field="content">'+escapeHtml(t.content||'')+'</textarea></td>'+
       '<td><div class="date-range">'+dateHtml+'</div></td>'+
       '<td><select class="status-select-sm assignee-select-sm" data-collection="tasks" data-id="'+t.id+'" data-field="assigneesSelect">'+assigneeOpts+'</select></td>'+
-      '<td><select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
+      '<td><div class="status-cell">'+starBtn+'<select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></div></td>'+
       '<td><details class="filelink-details"><summary>📝'+((t.comments||[]).length?' '+t.comments.length:'')+'</summary>'+renderComments('tasks', t)+'</details></td>'+
       '<td><details class="filelink-details"><summary>📎'+(fileCount?' '+fileCount:'')+'</summary>'+renderFileLinks('tasks', t)+'</details></td>'+
       '<td><button class="icon-btn danger" data-action="del-row" data-collection="tasks" data-id="'+t.id+'" title="삭제">✕</button></td>'+
@@ -1206,6 +1217,7 @@
       '<div class="card-head"><h3>🙋 개별 업무리스트</h3>'+
         '<div class="toolbar">'+
           '<label class="hide-done-toggle"><input type="checkbox" id="personalHideCompletedToggle"'+(state.personalHideCompleted?' checked':'')+'> 완료 항목 숨기기</label>'+
+          (state.personalSortField ? '<button class="btn ghost sm" data-action="reset-personal-sort">↺ 정렬 초기화</button>' : '')+
           '<button class="btn" data-action="add-personal" data-owner="'+owner+'">+ 추가</button>'+
         '</div>'+
       '</div>'+
@@ -1215,7 +1227,7 @@
         '<th data-action="sort-personal" data-field="category" class="sortable-th" style="min-width:92px">분류'+personalSortArrow('category')+'</th>'+
         '<th style="min-width:130px">이름</th><th style="min-width:260px">업무</th>'+
         '<th data-action="sort-personal" data-field="status" class="sortable-th" style="min-width:110px">진행도'+personalSortArrow('status')+'</th>'+
-        '<th style="min-width:96px">시작</th><th style="min-width:96px">마감</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
+        '<th style="min-width:150px">기간</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
         '<tbody>'+rows+'</tbody></table></div>'
         : '<div class="empty-state">등록된 업무가 없습니다. "+ 추가"를 눌러 지금 하고 있는 공부/업무를 기록해보세요.</div>')+
     '</div>';
@@ -1228,17 +1240,18 @@
     var sc = STATUS_COLORS[curStatus] || {fg:'#888',bg:'#eee'};
     var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
     var showDeadline = !!p.deadline || !!state.personalDeadlineOpen[p.id];
-    var deadlineHtml = showDeadline ?
-      renderCompactDateField('personal', p.id, 'deadline', p.deadline, '마감일')
-      : '<button type="button" class="btn ghost sm" data-action="show-personal-deadline" data-id="'+p.id+'">+ 마감일</button>';
+    // 업무리스트 날짜 칸과 똑같이 시작일 → 마감일을 화살표 하나로 이어서 한 칸에 컴팩트하게 보여줘요.
+    var dateHtml = renderCompactDateField('personal', p.id, 'startDate', p.startDate, '+ 날짜')+
+      (showDeadline ?
+        '<span class="date-arrow">→</span>'+renderCompactDateField('personal', p.id, 'deadline', p.deadline, '마감일')
+        : '<button type="button" class="btn ghost sm" data-action="show-personal-deadline" data-id="'+p.id+'">+ 마감일</button>');
     var fileCount = (p.files||[]).length;
     return '<tr data-id="'+p.id+'">'+
       '<td><select class="tag-select" data-collection="personal" data-id="'+p.id+'" data-field="category" style="background:'+tc.bg+';color:'+tc.fg+';">'+catOpts+'</select></td>'+
       '<td><input type="text" class="cell-title-input" placeholder="이름" data-collection="personal" data-id="'+p.id+'" data-field="title" value="'+escapeHtml(p.title||'')+'"></td>'+
       '<td><textarea class="cell-textarea" placeholder="업무 내용" data-collection="personal" data-id="'+p.id+'" data-field="content">'+escapeHtml(p.content||'')+'</textarea></td>'+
       '<td><select class="status-select" data-collection="personal" data-id="'+p.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
-      '<td>'+renderCompactDateField('personal', p.id, 'startDate', p.startDate, '+ 날짜')+'</td>'+
-      '<td>'+deadlineHtml+'</td>'+
+      '<td><div class="date-range">'+dateHtml+'</div></td>'+
       '<td style="text-align:center;"><input type="checkbox" data-collection="personal" data-id="'+p.id+'" data-field="followUp"'+(p.followUp?' checked':'')+'></td>'+
       '<td><textarea class="cell-textarea" placeholder="비고" data-collection="personal" data-id="'+p.id+'" data-field="note">'+escapeHtml(p.note||'')+'</textarea></td>'+
       '<td><details class="filelink-details"><summary>📎 '+(fileCount?fileCount+'개':'첨부')+'</summary>'+renderFileLinks('personal', p)+'</details></td>'+
@@ -1349,13 +1362,18 @@
     var items = sortComms(state.comms);
     var rows = items.map(renderCommRow).join('');
     return '<div class="card">'+
-      '<div class="card-head"><h3>💬 소통일지</h3><button class="btn" data-action="add-comm">+ 새 소통 기록</button></div>'+
+      '<div class="card-head"><h3>💬 소통일지</h3>'+
+        '<div class="toolbar">'+
+          (state.commSortField ? '<button class="btn ghost sm" data-action="reset-comm-sort">↺ 정렬 초기화</button>' : '')+
+          '<button class="btn" data-action="add-comm">+ 새 소통 기록</button>'+
+        '</div>'+
+      '</div>'+
       '<div class="table-scroll"><table><thead><tr>'+
       '<th style="min-width:130px">날짜</th>'+
       '<th data-action="sort-comms" data-field="dept" class="sortable-th" style="min-width:120px">분류'+commSortArrow('dept')+'</th>'+
       '<th data-action="sort-comms" data-field="workCategory" class="sortable-th" style="min-width:140px">업무'+commSortArrow('workCategory')+'</th>'+
-      '<th style="min-width:44px">대상</th><th style="min-width:240px">소통내역</th><th style="min-width:80px">수신/발신</th>'+
-      '<th style="min-width:48px">전화번호</th><th style="min-width:100px">사람</th><th style="min-width:150px">비고</th><th>첨부</th><th></th></tr></thead>'+
+      '<th style="min-width:60px">대상</th><th style="min-width:300px">소통내역</th><th style="min-width:80px">수신/발신</th>'+
+      '<th style="min-width:56px">전화번호</th><th style="min-width:100px">사람</th><th style="min-width:150px">비고</th><th>첨부</th><th></th></tr></thead>'+
       '<tbody>'+(rows||'')+'</tbody></table></div>'+
       (rows ? '' : '<div class="empty-state">등록된 소통 기록이 없습니다.</div>')+
     '</div>';
@@ -1375,10 +1393,10 @@
       '<td><input type="date" data-collection="comms" data-id="'+c.id+'" data-field="date" value="'+escapeHtml(c.date||todayStr())+'"></td>'+
       '<td><select data-collection="comms" data-id="'+c.id+'" data-field="dept" style="background:'+dc.bg+';color:'+dc.fg+';">'+deptOpts+'</select></td>'+
       '<td><select data-collection="comms" data-id="'+c.id+'" data-field="workCategory">'+workOpts+'</select></td>'+
-      '<td><input type="text" placeholder="상대방/부서" data-collection="comms" data-id="'+c.id+'" data-field="target" value="'+escapeHtml(c.target||'')+'"></td>'+
+      '<td><input type="text" class="comm-narrow-input" placeholder="상대방" data-collection="comms" data-id="'+c.id+'" data-field="target" value="'+escapeHtml(c.target||'')+'"></td>'+
       '<td><textarea class="cell-textarea" data-collection="comms" data-id="'+c.id+'" data-field="content" rows="1" placeholder="소통 내용 / 협의사항">'+escapeHtml(c.content||'')+'</textarea></td>'+
       '<td><select data-collection="comms" data-id="'+c.id+'" data-field="direction" style="background:'+dirColor.bg+';color:'+dirColor.fg+';">'+dirOpts+'</select></td>'+
-      '<td><input type="text" placeholder="내선/전화" data-collection="comms" data-id="'+c.id+'" data-field="ext" value="'+escapeHtml(c.ext||'')+'"></td>'+
+      '<td><input type="text" class="comm-narrow-input" placeholder="내선" data-collection="comms" data-id="'+c.id+'" data-field="ext" value="'+escapeHtml(c.ext||'')+'"></td>'+
       '<td><div class="cell-check-group">'+peopleChecks+'</div></td>'+
       '<td><textarea class="cell-textarea" data-collection="comms" data-id="'+c.id+'" data-field="note" rows="1" placeholder="비고">'+escapeHtml(c.note||'')+'</textarea></td>'+
       '<td><details class="filelink-details"><summary>📎 '+(fileCount?fileCount+'개':'첨부')+'</summary>'+renderFileLinks('comms', c)+'</details></td>'+
@@ -1726,6 +1744,9 @@
       else { state.personalSortField = pf; state.personalSortDir = 'asc'; }
       renderActiveTab();
     }
+    else if(action==='reset-task-sort'){ state.taskSortField = null; state.taskSortDir = 'asc'; renderActiveTab(); }
+    else if(action==='reset-personal-sort'){ state.personalSortField = null; state.personalSortDir = 'asc'; renderActiveTab(); }
+    else if(action==='reset-comm-sort'){ state.commSortField = null; state.commSortDir = 'asc'; renderActiveTab(); }
     else if(action==='toggle-person'){
       if(!requireFirebase()) return;
       var arrField = el.dataset.arrayField;
