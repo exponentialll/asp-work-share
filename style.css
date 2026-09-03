@@ -22,7 +22,8 @@ body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Apple SD 
 .sync-dot.on{background:#3fa15e;}
 .sync-label{font-size:11px;color:var(--text-light);}
 
-.tabs{display:flex;gap:2px;background:#fff;border-bottom:1px solid var(--border);flex-wrap:wrap;}
+/* 메뉴 탭 바를 아래 카드들과 같은 둥근 모서리 스타일로 맞춰서 서로 다른 모양처럼 보이지 않게 했어요 */
+.tabs{display:flex;gap:2px;background:#fff;border:1px solid var(--border);border-radius:var(--radius);flex-wrap:wrap;margin-bottom:16px;padding:0 6px;}
 .tab-btn{border:none;background:none;padding:12px 14px;font-size:13px;color:var(--text-light);cursor:pointer;border-bottom:2px solid transparent;font-weight:600;white-space:nowrap;}
 .tab-btn:hover{color:var(--text);}
 .tab-btn.active{color:var(--primary);border-bottom-color:var(--primary);}
@@ -56,13 +57,16 @@ main{padding:0;}
 .pin-row{display:flex;align-items:center;gap:7px;padding:5px 2px;font-size:12.5px;}
 .pin-row.done .pin-text{color:var(--text-light);text-decoration:line-through;}
 .pin-text{flex:1;color:var(--text);word-break:break-word;}
-.pin-add-row{display:flex;gap:6px;margin-top:8px;}
-.pin-add-row input{flex:1;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px;}
+.pin-add-row{display:flex;flex-wrap:nowrap;gap:6px;margin-top:8px;}
+.pin-add-row input{flex:1;min-width:0;border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:12px;box-sizing:border-box;}
+.pin-add-row button{flex-shrink:0;white-space:nowrap;}
 
 .card{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);padding:18px;margin-bottom:16px;}
 .card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px;flex-wrap:wrap;}
 .card-head h3{margin:0;font-size:14.5px;}
 .toolbar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}
+.hide-done-toggle{display:flex;align-items:center;gap:5px;font-size:12.5px;color:var(--text-light);cursor:pointer;white-space:nowrap;}
+.hide-done-toggle input{cursor:pointer;}
 .toolbar select, .toolbar input[type=text]{border:1px solid var(--border);border-radius:8px;padding:7px 10px;font-size:12.5px;background:#fff;}
 .btn{border:none;border-radius:8px;padding:8px 14px;font-size:12.5px;font-weight:700;cursor:pointer;background:var(--primary);color:#fff;}
 .btn:hover{background:var(--primary-dark);}
@@ -82,9 +86,10 @@ td input[type=text], td input[type=time], td input[type=date], td select, td tex
 }
 td input:hover, td select:hover, td textarea:hover{border-color:var(--border);}
 td input:focus, td select:focus, td textarea:focus{border-color:var(--primary);background:#fff;outline:none;}
-/* 표 안의 내용칸은 늘어나지 않고 높이가 고정돼요 — 글이 길면 칸 안에서만 스크롤되고,
-   덕분에 모든 행의 높이가 서로 비슷하게 맞춰집니다. */
-td textarea{resize:none;height:50px;overflow-y:auto;line-height:1.4;vertical-align:top;}
+/* 표 안의 내용칸은 평소엔 높이가 고정돼 모든 행의 높이가 서로 비슷하게 맞춰지지만,
+   클릭해서 입력하는 동안에는 최대 180px까지 자연스럽게 펼쳐져 편하게 타이핑할 수 있고,
+   포커스를 벗어나면 다시 원래 높이로 접힙니다(JS의 autoGrowCell 참고). */
+td textarea{resize:none;height:50px;max-height:180px;overflow-y:auto;line-height:1.4;vertical-align:top;transition:height .15s ease;}
 
 /* 표가 좁아지면 잘리지 않고 가로 스크롤되도록 (칸이 눌려서 안 보이는 것 방지) */
 .table-scroll{overflow-x:auto;}
@@ -121,18 +126,28 @@ td textarea{resize:none;height:50px;overflow-y:auto;line-height:1.4;vertical-ali
 .group-arrow{font-size:10px;color:var(--text-light);width:12px;display:inline-block;}
 .table-hint{font-size:11px;color:var(--text-light);margin:-4px 0 10px;}
 
-/* 첨부 파일 링크 미니 컴포넌트 (업무매뉴얼 / 소통일지) */
+/* 첨부 파일 칩 컴포넌트 (업무 리스트 / 회의 / 아이디어 / 소통일지 / 업무매뉴얼 / 자료실) */
 .filelinks{margin-top:8px;}
-.filelinks-label{font-size:11px;color:var(--text-light);margin-bottom:6px;}
-.filelink-row{display:flex;gap:6px;align-items:center;margin-bottom:5px;}
-.filelink-name{width:110px;flex-shrink:0;border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:12px;}
-.filelink-url{flex:1;border:1px solid var(--border);border-radius:6px;padding:5px 7px;font-size:12px;}
-.filelink-open{font-size:11px;color:var(--primary);text-decoration:none;white-space:nowrap;}
+.filelinks-list{margin-bottom:8px;}
+.filelink-chip{display:flex;align-items:center;gap:7px;background:#fafbfd;border:1px solid var(--border);border-radius:8px;padding:6px 9px;margin-bottom:6px;}
+.filelink-chip:last-child{margin-bottom:0;}
+.filelink-icon{font-size:13px;flex-shrink:0;}
+.filelink-chip-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12.5px;color:var(--text);}
+.filelink-open{font-size:11px;color:var(--primary);text-decoration:none;white-space:nowrap;flex-shrink:0;}
 .btn.ghost.sm{padding:5px 10px;font-size:11.5px;}
-.filelink-details{margin-top:2px;}
+.filelink-details{margin-top:2px;position:relative;}
 .filelink-details summary{cursor:pointer;font-size:11.5px;color:var(--text-light);list-style:none;}
 .filelink-details summary::-webkit-details-marker{display:none;}
-.filelink-details[open] summary{margin-bottom:6px;}
+.filelink-details[open] summary{margin-bottom:0;}
+/* 표 안에서 열리는 첨부파일/비고 팝업은 행/열을 밀어내지 않도록 떠 있는 카드로 표시됩니다 */
+.filelink-details[open] > .filelinks,
+.filelink-details[open] > .comments-box{
+  position:absolute;top:calc(100% + 4px);right:0;z-index:40;
+  background:#fff;border:1px solid var(--border);border-radius:10px;
+  box-shadow:0 10px 28px rgba(0,0,0,.14);padding:12px;
+  width:250px;max-width:80vw;max-height:320px;overflow-y:auto;
+}
+.filelink-details[open] > .filelinks .filelinks-list{max-height:220px;overflow-y:auto;}
 
 .manual-content{min-height:160px;max-height:480px;}
 .manual-file-count{font-size:11px;color:var(--text-light);}
