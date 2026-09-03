@@ -8,41 +8,58 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div>
-    <h1>💊 ASP 화이팅!</h1>
-    <div class="sub">강동성심병원 ASP 전담약사 공동 업무 공간 · 지수 · 윤다경</div>
+<!-- 로그인 전에는 이 화면만 보입니다 -->
+<div class="auth-gate" id="authGate">
+  <div class="auth-box">
+    <h2>💊 ASP 화이팅!</h2>
+    <div class="sub">지수 · 윤다경 전용 공간이에요. 로그인해주세요.</div>
+    <input type="email" id="authEmail" placeholder="이메일" autocomplete="username">
+    <input type="password" id="authPassword" placeholder="비밀번호" autocomplete="current-password">
+    <button class="btn" id="authLoginBtn" style="width:100%;">로그인</button>
+    <div class="auth-error" id="authError"></div>
+    <div class="auth-hint" id="authHint"></div>
   </div>
-  <div class="topbar-right">
-    <span class="sync-dot" id="syncDot"></span>
-    <span class="sync-label" id="syncLabel">연결 확인 중...</span>
-    <select class="who-select" id="whoSelect">
-      <option value="">이름 선택</option>
-      <option value="지수">지수</option>
-      <option value="윤다경">윤다경</option>
-    </select>
-  </div>
-</header>
+</div>
 
-<nav class="tabs">
-  <button class="tab-btn active" data-tab="announcements">📢 공지사항</button>
-  <button class="tab-btn" data-tab="calendar">📅 캘린더</button>
-  <button class="tab-btn" data-tab="tasks">📋 업무 리스트</button>
-  <button class="tab-btn" data-tab="personal">🙋 각자 업무리스트</button>
-  <button class="tab-btn" data-tab="meetings">🗓 회의</button>
-  <button class="tab-btn" data-tab="ideas">💡 아이디어</button>
-  <button class="tab-btn" data-tab="comms">💬 소통일지</button>
-  <button class="tab-btn" data-tab="worklog">📔 업무내용일지</button>
-  <button class="tab-btn" data-tab="files">🗂 자료실</button>
-</nav>
+<div id="appShell" style="display:none;">
+  <header class="topbar">
+    <div>
+      <h1>💊 ASP 화이팅!</h1>
+      <div class="sub">강동성심병원 ASP 전담약사 공동 업무 공간 · 지수 · 윤다경</div>
+    </div>
+    <div class="topbar-right">
+      <span class="sync-dot" id="syncDot"></span>
+      <span class="sync-label" id="syncLabel">연결 확인 중...</span>
+      <select class="who-select" id="whoSelect">
+        <option value="">이름 선택</option>
+        <option value="지수">지수</option>
+        <option value="윤다경">윤다경</option>
+      </select>
+      <button class="btn ghost" id="logoutBtn">로그아웃</button>
+    </div>
+  </header>
 
-<main id="tabContent"></main>
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="announcements">📢 공지사항</button>
+    <button class="tab-btn" data-tab="calendar">📅 캘린더</button>
+    <button class="tab-btn" data-tab="tasks">📋 업무 리스트</button>
+    <button class="tab-btn" data-tab="personal">🙋 각자 업무리스트</button>
+    <button class="tab-btn" data-tab="meetings">🗓 회의</button>
+    <button class="tab-btn" data-tab="ideas">💡 아이디어</button>
+    <button class="tab-btn" data-tab="comms">💬 소통일지</button>
+    <button class="tab-btn" data-tab="worklog">📔 업무내용일지</button>
+    <button class="tab-btn" data-tab="files">🗂 자료실</button>
+  </nav>
+
+  <main id="tabContent"></main>
+</div>
 
 <div class="toast" id="toast"></div>
 
 <!-- Firebase SDK (compat) -->
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="firebase-config.js"></script>
 <script src="app.js"></script>
 </body>

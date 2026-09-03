@@ -81,7 +81,7 @@
   }
 
   /* ---------------- Firebase ---------------- */
-  var db=null, firebaseReady=false;
+  var db=null, auth=null, firebaseReady=false, listenersAttached=false;
   function setSyncStatus(on, label){
     document.getElementById('syncDot').classList.toggle('on', on);
     document.getElementById('syncLabel').textContent = label;
@@ -89,20 +89,54 @@
   function initFirebase(){
     if(!window.FIREBASE_CONFIG || window.FIREBASE_CONFIG.apiKey==='YOUR_API_KEY'){
       setSyncStatus(false, 'Firebase 설정 필요 (firebase-config.js를 채워주세요)');
+      document.getElementById('authHint').textContent = 'firebase-config.js에 설정값을 먼저 채워야 로그인할 수 있어요.';
       renderActiveTab();
       return;
     }
     try{
       firebase.initializeApp(window.FIREBASE_CONFIG);
       db = firebase.firestore();
+      auth = firebase.auth();
       firebaseReady = true;
-      setSyncStatus(true, '실시간 동기화 중');
-      attachListeners();
+      setSyncStatus(false, '로그인 필요');
+      auth.onAuthStateChanged(handleAuthStateChanged);
     }catch(err){
       console.error(err);
       setSyncStatus(false, '연결 실패: '+err.message);
     }
   }
+
+  /* ---------------- 로그인 (Firebase Authentication) ---------------- */
+  function handleAuthStateChanged(user){
+    if(user){
+      document.getElementById('authGate').classList.add('hidden');
+      document.getElementById('appShell').style.display = '';
+      setSyncStatus(true, '실시간 동기화 중 · '+user.email);
+      if(!listenersAttached){ listenersAttached = true; attachListeners(); }
+    } else {
+      document.getElementById('authGate').classList.remove('hidden');
+      document.getElementById('appShell').style.display = 'none';
+      setSyncStatus(false, '로그인 필요');
+    }
+  }
+  function doLogin(){
+    var errEl = document.getElementById('authError');
+    errEl.textContent = '';
+    if(!auth){ errEl.textContent = 'Firebase 설정이 아직 안 되어 있어요 (firebase-config.js 확인).'; return; }
+    var email = document.getElementById('authEmail').value.trim();
+    var pw = document.getElementById('authPassword').value;
+    if(!email || !pw){ errEl.textContent = '이메일과 비밀번호를 입력해주세요.'; return; }
+    auth.signInWithEmailAndPassword(email, pw).catch(function(err){
+      errEl.textContent = '로그인 실패: 이메일 또는 비밀번호를 확인해주세요.';
+      console.error(err);
+    });
+  }
+  document.getElementById('authLoginBtn').addEventListener('click', doLogin);
+  document.getElementById('authPassword').addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
+  document.getElementById('authEmail').addEventListener('keydown', function(e){ if(e.key==='Enter') doLogin(); });
+  document.getElementById('logoutBtn').addEventListener('click', function(){
+    if(auth) auth.signOut();
+  });
   function handleSnapError(err){
     console.error(err);
     setSyncStatus(false, '동기화 오류 (Firestore 보안 규칙을 확인하세요)');
