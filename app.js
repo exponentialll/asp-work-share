@@ -1096,7 +1096,7 @@
       return '<button class="subtab-btn" data-action="task-set-major" data-major="'+cat+'" style="'+style+'">'+cat+' <span class="subtab-count">'+cnt+'</span></button>';
     }).join('');
 
-var headRow = '<tr>'+
+    var headRow = '<tr>'+
       (showMajorCol ? '<th style="min-width:56px">분류</th>' : '')+
       '<th data-action="sort-tasks" data-field="minor" class="sortable-th" style="min-width:280px">업무 (소분류 · 업무명)'+sortArrow('minor')+'</th>'+
       '<th style="min-width:260px">내용</th>'+
@@ -1105,7 +1105,7 @@ var headRow = '<tr>'+
       '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:110px">담당자'+sortArrow('assignees')+'</th>'+
       '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:118px">진행도'+sortArrow('status')+'</th>'+
       '<th style="min-width:70px">첨부</th>'+
-      '<th style="min-width:40px">중요</th>'+ /* 첨부 오른쪽으로 이동 */
+      '<th style="min-width:40px">중요</th>'+
       '<th></th>'+
     '</tr>';
 
