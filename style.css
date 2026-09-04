@@ -155,7 +155,7 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
   display: inline-block;
 }
 
-/* "+ 마감일" 버튼(.btn.ghost.sm)과 색/디자인을 통일하고, 고정폭만 이 클래스에서 따로 지정해요. */
+/* "+ 마감일" 버튼도 이 클래스(+empty)를 그대로 써서 "+ 날짜"와 크기/폰트가 항상 똑같아요. */
 .date-compact-btn {
   width: 78px; /* 고정 너비로 맞춤 */
   text-align: center;
@@ -171,9 +171,14 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
   white-space: nowrap;
 }
 .date-compact-btn:hover{border-color:var(--primary);color:var(--primary);}
+/* 아직 값이 없는 "+ 날짜"/"+ 마감일" 상태는 연한 회색 글씨로, 실제 날짜가 채워진 상태(예: 26-10-31)는
+   진한 글씨로 구분해서 한눈에 "입력된 날짜"와 "추가하기 버튼"이 헷갈리지 않게 했어요. */
+.date-compact-btn.empty{color:var(--text-light);font-weight:600;background:#fafbfd;}
+.date-compact-btn.empty:hover{color:var(--primary);border-color:var(--primary);background:#fff;}
 .date-hidden-input{position:absolute !important;left:0;top:0;width:1px !important;height:1px !important;opacity:0;pointer-events:none;border:0 !important;padding:0 !important;}
 .tag-input, .tag-select{border-radius:6px;font-weight:600;}
-.tag-select{width:92px !important;max-width:92px;padding:5px 16px 5px 6px !important;font-size:11.5px;white-space:nowrap;}
+/* 업무리스트의 분류/소분류/진행도 select(65~80px대)와 폭을 비슷하게 맞춰서 두 탭의 디자인이 통일돼 보이게 했어요. */
+.tag-select{width:84px !important;max-width:84px;padding:5px 16px 5px 6px !important;font-size:11.5px;white-space:nowrap;}
 /* <input type=text>도 select와 마찬가지로 %width는 표 자동 레이아웃 계산에서 무시되고 브라우저 기본 폭(약 170px)을
    기준으로 칸이 넓어져요. 그래서 대상/전화번호 칸도 고정 px width로 명시해서 실제로 좁아지게 했어요. */
 .comm-narrow-input{width:52px !important;}
@@ -277,7 +282,7 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
 /* 담당자 select: "지수·다경" 글자가 다 보이는 선에서 최대한 좁혀요. */
 .status-select-sm.assignee-select-sm{width:98px !important;padding:3px 16px 3px 6px !important;font-size:11.5px;}
 /* 대분류(행정/교육/중재) select: 예전엔 뱃지라 수정이 안 됐는데, 이제 select라서 잘못 고른 분류를 바로 고칠 수 있어요. */
-.status-select-sm.major-select-sm{width:65px !important;padding:3px 2px 3px 5px !important;font-size:11px;}
+.status-select-sm.major-select-sm{width:65px !important;padding:3px 2px 3px 5px !important;font-size:11.5px;}
 
 /* 각자 업무리스트 체크리스트 */
 .check-item{border:1px solid var(--border);border-left:4px solid #d5d5d5;border-radius:10px;padding:10px 12px;margin-bottom:8px;}
