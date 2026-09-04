@@ -356,35 +356,59 @@
         if(col==='tasks'){ ensureNotionImport(); migrateLegacyStatusLabel('tasks', state.tasks); }
         if(col==='comms'){ ensureNotionCommsImport(); migrateCommsWorkCategoryLabel(); }
         if(col==='personal'){ ensureNotionPersonalImport(); ensureNotionPersonalImportDayeong(); migrateLegacyStatusLabel('personal', state.personal); }
-        if(col==='personalCategories') ensurePersonalCategoriesSeed();
+        if(col==='personalCategories'){ ensurePersonalCategoriesSeed(); migratePersonalCategoriesToOwner(); }
         if(col==='manuals') migrateRemovedManualCategory();
       }, handleSnapError);
     });
   }
   // 개별 업무리스트 "분류"를 업무 리스트의 대분류 탭처럼 직접 추가/수정/삭제할 수 있게, 별도 컬렉션(personalCategories)에
-  // 분류 목록을 저장해요. 앱을 처음 여는 시점엔 이 컬렉션이 비어있을 수 있어서, 기존 기본 분류 + 이미 데이터에서
-  // 쓰이고 있는 분류 이름들을 한 번만 자동으로 채워 넣습니다(이미 있으면 건너뜀).
+  // 분류 목록을 저장해요. 지수·다경 각자 분류 목록이 따로 관리되도록 문서마다 owner 필드를 갖고 있어요.
+  // 앱을 처음 여는 시점엔 이 컬렉션이 비어있을 수 있어서, 사람마다 기본 분류 + 이미 데이터에서 쓰이고 있는
+  // 분류 이름들을 한 번만 자동으로 채워 넣습니다(이미 있으면 건너뜀).
   var personalCatSeedChecked = false;
   function ensurePersonalCategoriesSeed(){
     if(!db || personalCatSeedChecked) return;
     if(state.personalCategories.length>0){ personalCatSeedChecked = true; return; }
     personalCatSeedChecked = true;
     // 지수·다경 두 분이 동시에 앱을 처음 열어도 중복으로 채워지지 않도록, meta 마커 문서로 한 번만 실행되게 해요.
-    var markerId = 'personal-categories-seeded';
+    var markerId = 'personal-categories-seeded-v2';
     db.collection('meta').doc(markerId).get().then(function(snap){
       if(snap.exists) return;
-      var used = uniqNonEmpty(state.personal.map(function(p){ return p.category; }));
-      var names = PERSONAL_BASE_CATS.slice();
-      used.forEach(function(c){ if(names.indexOf(c)===-1) names.push(c); });
-      if(!names.length) return;
       var batch = db.batch();
-      names.forEach(function(name, i){
-        var ref = db.collection('personalCategories').doc();
-        batch.set(ref, { name:name, order:i, createdAt:Date.now() });
+      var any = false;
+      PEOPLE.forEach(function(owner){
+        var used = uniqNonEmpty(state.personal.filter(function(p){ return p.owner===owner; }).map(function(p){ return p.category; }));
+        var names = PERSONAL_BASE_CATS.slice();
+        used.forEach(function(c){ if(names.indexOf(c)===-1) names.push(c); });
+        names.forEach(function(name, i){
+          any = true;
+          var ref = db.collection('personalCategories').doc();
+          batch.set(ref, { name:name, owner:owner, order:i, createdAt:Date.now() });
+        });
       });
+      if(!any) return;
       batch.set(db.collection('meta').doc(markerId), { done:true, importedAt:Date.now() });
       batch.commit().catch(function(err){ console.error(err); });
     }).catch(function(err){ console.error(err); });
+  }
+  // 예전엔 분류가 지수·다경 공용이었는데, 이제 각자 따로 관리하도록 바뀌었어요. owner 필드가 없는 옛날 분류
+  // 문서가 남아있으면 두 사람 몫으로 각각 복사해주고(이미 같은 이름이 있으면 건너뜀) 옛 문서는 지워요.
+  function migratePersonalCategoriesToOwner(){
+    if(!db) return;
+    var legacy = state.personalCategories.filter(function(c){ return !c.owner; });
+    if(!legacy.length) return;
+    var batch = db.batch();
+    legacy.forEach(function(c){
+      PEOPLE.forEach(function(owner){
+        var exists = state.personalCategories.some(function(x){ return x.owner===owner && x.name===c.name; });
+        if(!exists){
+          var ref = db.collection('personalCategories').doc();
+          batch.set(ref, { name:c.name, owner:owner, order:c.order||0, createdAt:Date.now() });
+        }
+      });
+      batch.delete(db.collection('personalCategories').doc(c.id));
+    });
+    batch.commit().catch(function(err){ console.error(err); });
   }
 
   // "개인 공부" 분류를 없앴는데 예전에 그 분류로 저장된 매뉴얼이 있으면 분류 탭 어디에도 안 걸려서
@@ -785,44 +809,44 @@
     '</div>';
   }
 
-  /* ---------------- 각자 업무리스트: 분류 옵션 (personalCategories 컬렉션 기반, 직접 추가·수정·삭제 가능) ---------------- */
-  function personalCategoryOptions(current){
-    var all = (state.personalCategories||[]).slice()
+  /* ---------------- 각자 업무리스트: 분류 옵션 (personalCategories 컬렉션 기반, 지수·다경 각자 따로 관리) ---------------- */
+  function personalCategoryOptions(current, owner){
+    var all = (state.personalCategories||[]).filter(function(c){ return c.owner===owner; })
       .sort(function(a,b){ return (a.order||0)-(b.order||0); })
       .map(function(c){ return c.name; });
     // personalCategories 컬렉션이 아직 로딩/시딩 전이거나, 옛 데이터에만 남아있는 분류명이 있으면
     // 화면에서 사라지지 않도록 안전망으로 같이 넣어줘요.
-    var used = uniqNonEmpty(state.personal.map(function(p){ return p.category; }));
+    var used = uniqNonEmpty(state.personal.filter(function(p){ return p.owner===owner; }).map(function(p){ return p.category; }));
     used.forEach(function(c){ if(all.indexOf(c)===-1) all.push(c); });
     if(current && all.indexOf(current)===-1) all.push(current);
     return all;
   }
-  function findPersonalCategoryDoc(name){
-    return (state.personalCategories||[]).find(function(c){ return c.name===name; });
+  function findPersonalCategoryDoc(name, owner){
+    return (state.personalCategories||[]).find(function(c){ return c.name===name && c.owner===owner; });
   }
-  // 분류 추가: 이름이 이미 있으면 그대로 재사용하고, 없으면 새 문서를 만들어요.
-  function addPersonalCategory(name, cb){
+  // 분류 추가: 이름이 이미 있으면 그대로 재사용하고, 없으면 그 사람 몫으로 새 문서를 만들어요.
+  function addPersonalCategory(name, owner, cb){
     name = (name||'').trim();
     if(!name) return;
-    if(findPersonalCategoryDoc(name)){ if(cb) cb(); return; }
+    if(findPersonalCategoryDoc(name, owner)){ if(cb) cb(); return; }
     if(!db) return;
-    var order = (state.personalCategories||[]).length;
-    db.collection('personalCategories').add({ name:name, order:order, createdAt:Date.now() })
+    var order = (state.personalCategories||[]).filter(function(c){ return c.owner===owner; }).length;
+    db.collection('personalCategories').add({ name:name, owner:owner, order:order, createdAt:Date.now() })
       .then(function(){ if(cb) cb(); })
       .catch(function(err){ console.error(err); showToast('분류 추가 실패: '+err.message); });
   }
-  // 분류 이름 수정: 분류 문서 이름을 바꾸고, 이미 그 분류를 쓰고 있는 개별 업무 항목들도 한 번에 새 이름으로 옮겨줘요.
+  // 분류 이름 수정: 분류 문서 이름을 바꾸고, 같은 사람의 개별 업무 항목 중 이 분류를 쓰던 것들도 한 번에 새 이름으로 옮겨줘요.
   function renamePersonalCategory(catDoc){
     if(!db) return;
     var newName = prompt('분류 이름 수정', catDoc.name);
     if(newName===null) return;
     newName = newName.trim();
     if(!newName || newName===catDoc.name) return;
-    if(findPersonalCategoryDoc(newName)){ showToast('이미 있는 분류 이름이에요'); return; }
+    if(findPersonalCategoryDoc(newName, catDoc.owner)){ showToast('이미 있는 분류 이름이에요'); return; }
     var oldName = catDoc.name;
     var batch = db.batch();
     batch.update(db.collection('personalCategories').doc(catDoc.id), { name:newName });
-    state.personal.filter(function(p){ return p.category===oldName; }).forEach(function(p){
+    state.personal.filter(function(p){ return p.category===oldName && p.owner===catDoc.owner; }).forEach(function(p){
       batch.update(db.collection('personal').doc(p.id), { category:newName });
     });
     batch.commit().then(function(){ showToast('분류 이름을 "'+newName+'"(으)로 바꿨어요'); }).catch(function(err){ console.error(err); showToast('수정 실패: '+err.message); });
@@ -830,7 +854,7 @@
   // 분류 삭제: 아직 그 분류를 쓰는 항목이 있으면 실수로 데이터가 안 보이게 되는 걸 막기 위해 삭제를 막아요.
   function deletePersonalCategory(catDoc){
     if(!db) return;
-    var inUse = state.personal.filter(function(p){ return p.category===catDoc.name; }).length;
+    var inUse = state.personal.filter(function(p){ return p.category===catDoc.name && p.owner===catDoc.owner; }).length;
     if(inUse>0){ showToast('"'+catDoc.name+'" 분류를 쓰는 항목이 '+inUse+'개 있어요. 먼저 다른 분류로 바꾼 뒤 삭제해주세요.'); return; }
     if(!confirm('"'+catDoc.name+'" 분류를 삭제할까요?')) return;
     db.collection('personalCategories').doc(catDoc.id).delete().catch(function(err){ console.error(err); showToast('삭제 실패: '+err.message); });
@@ -869,7 +893,8 @@
     commSortDir: 'asc',
     calMonth: (function(){ var d=new Date(); return d.getFullYear()+'-'+pad2(d.getMonth()+1); })(),
     calSelectedDate: null,
-    calFilter: 'all'
+    // 공동 일정/중요 일정은 항상 보이고, 개인 일정만 지수·다경 각자 체크박스로 켜고 끌 수 있어요.
+    calShowPersonal: (function(){ var o={}; PEOPLE.forEach(function(p){ o[p]=true; }); return o; })()
   };
 
   document.getElementById('whoSelect').value = state.who;
@@ -1038,10 +1063,9 @@
     return list;
   }
   function matchesCalFilter(item){
-    if(item.cls.type==='중요') return true;
-    if(state.calFilter==='all') return true;
-    if(state.calFilter==='shared') return item.cls.type==='공동';
-    return item.cls.owner===state.calFilter;
+    // 중요 일정(D-day)과 공동 일정은 항상 보여주고, 개인 일정만 사람별 체크박스로 켜고 끌 수 있어요.
+    if(item.cls.type!=='개인') return true;
+    return !!state.calShowPersonal[item.cls.owner];
   }
   function calItemColor(item){
     if(item.cls.type==='중요') return DDAY_COLOR;
@@ -1075,8 +1099,10 @@
       gridHtml += '<div class="'+cls+'" data-action="select-cal-date" data-date="'+dateStr+'"><span class="cal-daynum">'+d+'</span><div class="cal-dots">'+dots+more+'</div></div>';
     }
 
-    var filterOpts = [['all','전체'],['shared','공동 일정'],['지수','지수 개인'],['다경','다경 개인']].map(function(o){
-      return '<option value="'+o[0]+'"'+(state.calFilter===o[0]?' selected':'')+'>'+o[1]+'</option>';
+    // 공동 일정/중요 일정은 항상 보이고, 개인 일정만 지수·다경 각자 체크해서 켜고 끌 수 있게 했어요.
+    var personFilterHtml = PEOPLE.map(function(p){
+      var pc = PERSON_COLORS[p];
+      return '<label class="hide-done-toggle"><input type="checkbox" class="cal-person-toggle" data-person="'+p+'"'+(state.calShowPersonal[p]?' checked':'')+'> <span style="color:'+pc.fg+';">'+p+' 개인</span></label>';
     }).join('');
 
     var selDate = state.calSelectedDate;
@@ -1103,7 +1129,7 @@
       '<div class="card">'+
         '<div class="card-head"><h3>📅 '+year+'년 '+(month+1)+'월</h3>'+
           '<div class="toolbar">'+
-            '<select id="calFilterSelect">'+filterOpts+'</select>'+
+            personFilterHtml+
             '<button class="btn ghost" data-action="cal-prev">‹ 이전달</button>'+
             '<button class="btn ghost" data-action="cal-today">이번달</button>'+
             '<button class="btn ghost" data-action="cal-next">다음달 ›</button>'+
@@ -1328,7 +1354,7 @@
   /* ================= 🙋 각자 업무리스트 (엑셀 시트 방식) ================= */
   function renderPersonalTab(){
     var owner = state.personalActiveOwner || PEOPLE[0];
-    var catOrder = personalCategoryOptions(null);
+    var catOrder = personalCategoryOptions(null, owner);
     var activeCat = state.personalActiveCategory || '전체';
     if(activeCat!=='전체' && catOrder.indexOf(activeCat)===-1) activeCat = state.personalActiveCategory = '전체';
     var items = state.personal.filter(function(p){ return p.owner===owner; })
@@ -1361,17 +1387,21 @@
       return '<button class="subtab-btn sheet-tab" data-action="personal-set-owner" data-owner="'+p+'" style="'+style+'">'+p+' <span class="subtab-count">'+cnt+'</span></button>';
     }).join('');
     // 업무 리스트의 대분류 탭(전체/행정/교육/중재)처럼, 개별 업무리스트도 분류별로 시트가 나뉜 것처럼
-    // 탭으로 눌러서 필터링할 수 있게 했어요. 탭 목록은 personalCategories 컬렉션 기반이라 분류를
-    // 추가/이름수정/삭제하면 여기도 바로 반영돼요.
+    // 탭으로 눌러서 필터링할 수 있게 했어요. 탭 목록은 personalCategories 컬렉션 기반(지수·다경 각자 따로)이라
+    // 분류를 추가/이름수정/삭제하면 여기도 바로 반영돼요. 항목이 하나도 없는 분류는 탭이 지저분해 보여서
+    // 지금 선택돼있는 게 아니면 숨겨요.
     var ownerItemsAll = state.personal.filter(function(p){ return p.owner===owner; });
-    var catTabsHtml = ['전체'].concat(catOrder).map(function(cat){
+    var visibleCats = catOrder.filter(function(cat){
+      return cat===activeCat || ownerItemsAll.some(function(p){ return (p.category||'')===cat; });
+    });
+    var catTabsHtml = ['전체'].concat(visibleCats).map(function(cat){
       var cnt = cat==='전체' ? ownerItemsAll.length : ownerItemsAll.filter(function(p){ return (p.category||'')===cat; }).length;
       var cc = cat==='전체' ? SHARED_COLOR : (PERSONAL_CAT_COLORS[cat] || hashColor(cat));
       var isActive = cat===activeCat;
       var style = isActive ? 'background:'+cc.bg+';color:'+cc.fg+';border-color:'+cc.bg+';' : '';
       return '<button class="subtab-btn" data-action="personal-set-category" data-category="'+escapeHtml(cat)+'" style="'+style+'">'+escapeHtml(cat)+' <span class="subtab-count">'+cnt+'</span></button>';
     }).join('');
-    var catManagePanel = state.personalCatManageOpen ? renderPersonalCatManagePanel() : '';
+    var catManagePanel = state.personalCatManageOpen ? renderPersonalCatManagePanel(owner) : '';
     // 분류 색깔만으로는 비슷한 색이 나올 수 있어 구분이 잘 안 될 때가 있어서, "분류"나 "진행도" 열
     // 제목을 누르면 그 기준으로 모아서/순서대로 볼 수 있게 정렬 토글을 붙였어요.
     function personalSortArrow(field){
@@ -1402,10 +1432,10 @@
   }
   // 개별 업무리스트 분류 관리 패널: 분류를 새로 추가하거나, 기존 분류 이름을 바꾸거나(사용 중인 항목도 같이 이동),
   // 더 이상 안 쓰는 분류를 삭제할 수 있어요. 아직 그 분류를 쓰는 항목이 있으면 삭제가 막혀요.
-  function renderPersonalCatManagePanel(){
-    var cats = (state.personalCategories||[]).slice().sort(function(a,b){ return (a.order||0)-(b.order||0); });
+  function renderPersonalCatManagePanel(owner){
+    var cats = (state.personalCategories||[]).filter(function(c){ return c.owner===owner; }).sort(function(a,b){ return (a.order||0)-(b.order||0); });
     var rows = cats.length ? cats.map(function(c){
-      var cnt = state.personal.filter(function(p){ return p.category===c.name; }).length;
+      var cnt = state.personal.filter(function(p){ return p.category===c.name && p.owner===owner; }).length;
       return '<div class="recur-row">'+
         '<span style="flex:1;">'+escapeHtml(c.name)+' <span class="subtab-count">'+cnt+'개 사용중</span></span>'+
         '<button class="icon-btn" data-action="rename-personal-category" data-id="'+c.id+'" title="이름 수정">✎</button>'+
@@ -1422,7 +1452,7 @@
     '</div>';
   }
   function renderPersonalRow(p){
-    var catOptions = personalCategoryOptions(p.category);
+    var catOptions = personalCategoryOptions(p.category, p.owner);
     var catOpts = catOptions.map(function(c){ return '<option value="'+c+'"'+(p.category===c?' selected':'')+'>'+c+'</option>'; }).join('') + '<option value="__new__">+ 직접 추가...</option>';
     var tc = PERSONAL_CAT_COLORS[p.category] || (p.category ? hashColor(p.category) : {fg:'#888',bg:'#f0f0f0'});
     var curStatus = p.status || '시작 전';
@@ -1873,9 +1903,10 @@
     else if(action==='add-personal-category'){
       var inputEl = document.getElementById('newPersonalCatInput');
       var newCatName = inputEl ? inputEl.value : '';
+      var ownerForNewCat = state.personalActiveOwner || PEOPLE[0];
       if(!newCatName || !newCatName.trim()){ showToast('분류 이름을 입력해주세요'); return; }
-      if(findPersonalCategoryDoc(newCatName.trim())){ showToast('이미 있는 분류 이름이에요'); return; }
-      addPersonalCategory(newCatName.trim(), function(){ showToast('분류를 추가했어요'); });
+      if(findPersonalCategoryDoc(newCatName.trim(), ownerForNewCat)){ showToast('이미 있는 분류 이름이에요'); return; }
+      addPersonalCategory(newCatName.trim(), ownerForNewCat, function(){ showToast('분류를 추가했어요'); });
     }
     else if(action==='rename-personal-category'){
       var catDocR = (state.personalCategories||[]).find(function(c){ return c.id===id; });
@@ -2041,7 +2072,7 @@
     if(t.id==='filterStatus'){ state.taskFilterStatus = t.value; renderActiveTab(); return; }
     if(t.id==='hideCompletedToggle'){ state.taskHideCompleted = t.checked; renderActiveTab(); return; }
     if(t.id==='personalHideCompletedToggle'){ state.personalHideCompleted = t.checked; renderActiveTab(); return; }
-    if(t.id==='calFilterSelect'){ state.calFilter = t.value; renderActiveTab(); return; }
+    if(t.classList && t.classList.contains('cal-person-toggle')){ state.calShowPersonal[t.dataset.person] = t.checked; renderActiveTab(); return; }
     if(t.type==='file' && t.classList.contains('filelink-upload-input')){
       if(t.files && t.files[0]){
         if(t.dataset.single==='1') uploadSingleField(t.dataset.collection, t.dataset.id, t.files[0]);
@@ -2053,8 +2084,10 @@
       var newCat = prompt('새 분류 이름을 입력하세요');
       if(newCat && newCat.trim()){
         var newCatTrim = newCat.trim();
-        // personalCategories 컬렉션에도 같이 등록해서, 분류 관리 패널/탭에도 바로 나타나게 해요.
-        addPersonalCategory(newCatTrim, function(){});
+        var itemForCat = state.personal.find(function(x){ return x.id===t.dataset.id; });
+        var catOwnerForNew = itemForCat ? itemForCat.owner : (state.personalActiveOwner||PEOPLE[0]);
+        // personalCategories 컬렉션에도 같이 등록해서, 그 사람의 분류 관리 패널/탭에도 바로 나타나게 해요.
+        addPersonalCategory(newCatTrim, catOwnerForNew, function(){});
         flushSaveNow('personal', t.dataset.id, 'category', newCatTrim);
       }
       else { renderActiveTab(); }
