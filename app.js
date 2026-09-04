@@ -161,6 +161,45 @@
       '<input type="date" id="'+domId+'" class="date-hidden-input" data-collection="'+col+'" data-id="'+id+'" data-field="'+field+'" value="'+escapeHtml(value||'')+'">'+
     '</span>';
   }
+  // CSV로 내보내기: 쉼표/줄바꿈/따옴표가 들어있는 값은 큰따옴표로 감싸고 내부 따옴표는 두 번 써서 이스케이프해요.
+  function csvCell(v){
+    var s = (v===undefined || v===null) ? '' : String(v);
+    if(/[",\n\r]/.test(s)) s = '"'+s.replace(/"/g,'""')+'"';
+    return s;
+  }
+  function downloadCsv(filename, rows){
+    var csv = rows.map(function(r){ return r.map(csvCell).join(','); }).join('\r\n');
+    // 엑셀에서 한글이 깨지지 않도록 UTF-8 BOM을 앞에 붙여요.
+    var blob = new Blob(['﻿'+csv], { type:'text/csv;charset=utf-8;' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 1000);
+  }
+  function exportTasksCsv(){
+    var rows = [['분류','소분류','업무명','내용','날짜','마감일','담당자','진행도','중요','비고']];
+    state.tasks.forEach(function(t){
+      rows.push([
+        t.major||'', t.minor||'', t.title||'', t.content||'', t.date||'', t.endDate||'',
+        (t.assignees||[]).join('/'), t.status||'', t.important?'중요':'',
+        (t.comments||[]).map(function(c){ return c.text||''; }).join(' | ')
+      ]);
+    });
+    downloadCsv('업무리스트_'+todayStr()+'.csv', rows);
+    showToast('CSV 파일을 내려받았어요');
+  }
+  function exportPersonalCsv(){
+    var rows = [['담당자','분류','이름','업무','진행도','시작일','마감일','F/U','비고']];
+    state.personal.forEach(function(p){
+      rows.push([
+        p.owner||'', p.category||'', p.title||'', p.content||'', p.status||'',
+        p.startDate||'', p.deadline||'', p.followUp?'O':'', p.note||''
+      ]);
+    });
+    downloadCsv('개별업무리스트_'+todayStr()+'.csv', rows);
+    showToast('CSV 파일을 내려받았어요');
+  }
   function badge(label, colorMap, extraStyle){
     var c = (colorMap && colorMap[label]) || { fg:'#888', bg:'#eee' };
     return '<span class="badge" style="color:'+c.fg+';background:'+c.bg+(extraStyle||'')+'">'+escapeHtml(label)+'</span>';
@@ -235,7 +274,7 @@
   }
 
   /* ---------------- Firebase ---------------- */
-  var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false, weeklyMeetingChecked=false, notionImportChecked=false, notionCommsImportChecked=false, notionPersonalImportChecked=false;
+  var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false, weeklyMeetingChecked=false, notionImportChecked=false, notionCommsImportChecked=false, notionPersonalImportChecked=false, notionPersonalDayeongImportChecked=false;
   function setSyncStatus(on, label){
     document.getElementById('syncDot').classList.toggle('on', on);
     document.getElementById('syncLabel').textContent = label;
@@ -311,7 +350,7 @@
         if(col==='meetings') ensureWeeklyMeeting();
         if(col==='tasks'){ ensureNotionImport(); migrateLegacyStatusLabel('tasks', state.tasks); }
         if(col==='comms'){ ensureNotionCommsImport(); migrateCommsWorkCategoryLabel(); }
-        if(col==='personal'){ ensureNotionPersonalImport(); migrateLegacyStatusLabel('personal', state.personal); }
+        if(col==='personal'){ ensureNotionPersonalImport(); ensureNotionPersonalImportDayeong(); migrateLegacyStatusLabel('personal', state.personal); }
         if(col==='manuals') migrateRemovedManualCategory();
       }, handleSnapError);
     });
@@ -469,6 +508,40 @@
       });
       batch.set(db.collection('meta').doc(markerId), { done:true, importedAt:Date.now() });
       batch.commit().then(function(){ showToast('노션 개별 업무리스트 '+items.length+'건을 가져왔어요'); }).catch(function(err){ console.error(err); });
+    }).catch(function(err){ console.error(err); });
+  }
+
+  // 다경님이 보내주신 노션 "다경 업무리스트" 캡처 화면에서 항목을 추출해 한 번만 개별 업무리스트에 옮겨 담습니다.
+  // 노션 표의 "중요도" 체크박스는 이 앱의 개별 업무리스트에는 해당하는 필드가 없어서 가져오지 않았어요.
+  function ensureNotionPersonalImportDayeong(){
+    if(!db || notionPersonalDayeongImportChecked) return;
+    notionPersonalDayeongImportChecked = true;
+    var markerId = 'notion-personal-dayeong-import-2026-09';
+    db.collection('meta').doc(markerId).get().then(function(snap){
+      if(snap.exists) return;
+      var items = [
+        { slug:'pharm-lecture-summary', category:'교육', title:'병원약사회 강의 요약', content:'병원약사회 마지막 강의 잘 듣고 내성파트 요약하기', status:'완료' },
+        { slug:'acceptance-confirm', category:'중재', title:'수용여부 확정', content:'수용여부 확정하기.', status:'완료', note:'마감일: 노션 원본이 잘려서 정확한 날짜는 노션에서 확인해주세요' },
+        { slug:'qt-prolong-paper', category:'개인공부', title:'QT연장 위험인자 논문', content:'약물유발 QT연장 위험인자에 대한 논문 읽고 정리 (노션 원본이 잘려서 정확한 내용은 노션에서 확인해주세요)', status:'완료' },
+        { slug:'idsa-mrsa-guideline', category:'개인공부', title:'IDSA MRSA 지침', content:'IDSA MRSA 치료 지침 읽고 정리 (RIFAMPICIN 사용... 노션 원본이 잘려서 정확한 내용은 노션에서 확인해주세요)', status:'완료' },
+        { slug:'hd-vanco-tdm', category:'개인공부', title:'HD 반코마이신 TDM', content:'HD환자에서의 vancomycin TDM 자료 정리', status:'완료' },
+        { slug:'admin-work-summary', category:'행정', title:'행정 업무 정리', content:'행정 업무내용 정리하기', status:'완료' },
+        { slug:'idsa-uti-paper', category:'개인공부', title:'IDSA UTI 논문', content:'IDSA UTI 논문 보고 정리', status:'완료' },
+        { slug:'surgical-prophylaxis-paper', category:'개인공부', title:'수술 예방항생제 논문', content:'surgical prophylaxis 항생제에 대한 논문 읽고 정리', status:'완료' },
+        { slug:'asp-symposium-apply', category:'교육', title:'ASP 심포지엄 신청', content:'병원약사회 ASP 심포지엄 신청, 결재 올리기', status:'완료' },
+        { slug:'notion-study', category:'개인공부', title:'노션 공부', content:'노션 공부하기', status:'시작 전' }
+      ];
+      var batch = db.batch();
+      items.forEach(function(it){
+        var ref = db.collection('personal').doc('notion-import-dg-'+it.slug);
+        batch.set(ref, {
+          owner:'다경', category:it.category||'', title:it.title||'', content:it.content||'', status:it.status||'시작 전',
+          startDate:it.startDate||'', deadline:it.deadline||'', followUp:false, note:it.note||'', files:[],
+          clientTs:Date.now(), createdAt:Date.now(), createdBy:'노션 가져오기'
+        });
+      });
+      batch.set(db.collection('meta').doc(markerId), { done:true, importedAt:Date.now() });
+      batch.commit().then(function(){ showToast('노션 다경 업무리스트 '+items.length+'건을 가져왔어요'); }).catch(function(err){ console.error(err); });
     }).catch(function(err){ console.error(err); });
   }
 
@@ -884,10 +957,8 @@
     state.tasks.forEach(function(t){ if(t.date) list.push({ id:t.id, collection:'tasks', board:'업무 리스트', date:t.date, title:t.title||'(제목 없음)', cls:classifyTask(t) }); });
     state.personal.forEach(function(p){ if(p.deadline) list.push({ id:p.id, collection:'personal', board:'개별 업무리스트', date:p.deadline, title:p.title||'(제목 없음)', cls:{ type:'개인', owner:p.owner } }); });
     state.meetings.forEach(function(m){ if(m.date) list.push({ id:m.id, collection:'meetings', board:'회의', date:m.date, title:m.title||'(제목 없음)', cls:{ type:'공동', owner:null } }); });
-    state.ideas.forEach(function(i){ if(i.date) list.push({ id:i.id, collection:'ideas', board:'아이디어', date:i.date, title:i.title||'(제목 없음)', cls:{ type:'공동', owner:null } }); });
-    state.announcements.forEach(function(a){ if(a.date) list.push({ id:a.id, collection:'announcements', board:'공지사항', date:a.date, title:a.title||'(제목 없음)', cls:{ type:'공동', owner:null } }); });
-    state.comms.forEach(function(c){ if(c.date) list.push({ id:c.id, collection:'comms', board:'소통일지', date:c.date, title:(c.target?c.target+' 소통':'소통 기록'), cls:{ type:'공동', owner:null } }); });
-    state.files.forEach(function(f){ if(f.date) list.push({ id:f.id, collection:'files', board:'자료실', date:f.date, title:f.title||'(제목 없음)', cls:{ type:'공동', owner:null } }); });
+    // 아이디어/공지사항/소통일지/자료실은 날짜가 있어도 캘린더가 너무 복잡해져서 제외했어요.
+    // 캘린더에는 업무 리스트 · 개별 업무리스트 · 회의만, 그리고 사이드바에서 직접 챙기는 D-day만 표시됩니다.
     state.dday.forEach(function(d){ if(d.date) list.push({ id:d.id, collection:'dday', board:'중요 일정', date:d.date, title:d.title||'(제목 없음)', cls:{ type:'중요', owner:null } }); });
     return list;
   }
@@ -1103,7 +1174,7 @@
       '<th style="min-width:70px">비고</th>'+ /* 비고 열을 내용 오른쪽으로 이동 */
       '<th data-action="sort-tasks" data-field="date" class="sortable-th" style="min-width:180px">날짜'+sortArrow('date')+'</th>'+
       '<th data-action="sort-tasks" data-field="assignees" class="sortable-th" style="min-width:110px">담당자'+sortArrow('assignees')+'</th>'+
-      '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:118px">진행도'+sortArrow('status')+'</th>'+
+      '<th data-action="sort-tasks" data-field="status" class="sortable-th" style="min-width:104px">진행도'+sortArrow('status')+'</th>'+
       '<th style="min-width:70px">첨부</th><th></th>'+
     '</tr>';
 
@@ -1124,6 +1195,7 @@
           '<select id="filterStatus">'+statusOpts+'</select>'+
           '<label class="hide-done-toggle"><input type="checkbox" id="hideCompletedToggle"'+(state.taskHideCompleted?' checked':'')+'> 완료 항목 숨기기</label>'+
           (state.taskSortField ? '<button class="btn ghost sm" data-action="reset-task-sort">↺ 정렬 초기화</button>' : '')+
+          '<button class="btn ghost" data-action="export-tasks-csv">⬇ CSV 내보내기</button>'+
           '<button class="btn ghost" data-action="toggle-recurring-panel">'+(state.taskShowRecurringPanel?'✅ 정기업무 닫기':'✅ 정기업무 현황')+'</button>'+
           '<button class="btn" data-action="add-task">+ 업무 추가</button>'+
         '</div>'+
@@ -1135,6 +1207,10 @@
   }
 
   function renderTaskRow(t, showMajorCol){
+    // 분류(대분류)를 잘못 골랐을 때 직접 고칠 수 있도록 뱃지 대신 select로 보여줘요.
+    var curMajor = t.major || MAJOR_CATS[0];
+    var majorOpts = MAJOR_CATS.map(function(c){ return '<option value="'+c+'"'+(curMajor===c?' selected':'')+'>'+c+'</option>'; }).join('');
+    var majorColor = CAT_COLORS[curMajor] || {fg:'#888',bg:'#eee'};
     var curMinor = t.minor || '';
     var minorSource = (t.major||MAJOR_CATS[0])==='행정' ? ADMIN_MINOR_CATS : MINOR_CATS;
     var minorOptionsList = minorSource.slice();
@@ -1160,7 +1236,7 @@
     var starBtn = '<button type="button" class="icon-btn star-btn'+(t.important?' active':'')+'" data-action="toggle-task-important" data-id="'+t.id+'" title="'+(t.important?'중요 표시 해제':'중요 표시(항상 위로)')+'">'+(t.important?'★':'☆')+'</button>';
 
     return '<tr data-id="'+t.id+'">'+
-      (showMajorCol ? '<td>'+badge(t.major||'미분류', CAT_COLORS)+'</td>' : '')+
+      (showMajorCol ? '<td><select class="status-select-sm major-select-sm" data-collection="tasks" data-id="'+t.id+'" data-field="major" style="background:'+majorColor.bg+';color:'+majorColor.fg+';">'+majorOpts+'</select></td>' : '')+
       '<td><div class="task-title-cell">'+
         '<select class="status-select minor-select" data-collection="tasks" data-id="'+t.id+'" data-field="minor" style="background:'+mnc.bg+';color:'+mnc.fg+';">'+minorOpts+'</select>'+
         '<input type="text" class="cell-title-input" placeholder="업무명" data-collection="tasks" data-id="'+t.id+'" data-field="title" value="'+escapeHtml(t.title||'')+'">'+
@@ -1169,7 +1245,7 @@
       '<td><details class="filelink-details"><summary>📝'+((t.comments||[]).length?' '+t.comments.length:'')+'</summary>'+renderComments('tasks', t)+'</details></td>'+ /* 비고 위치 변경 */
       '<td><div class="date-range">'+dateHtml+'</div></td>'+
       '<td><select class="status-select-sm assignee-select-sm" data-collection="tasks" data-id="'+t.id+'" data-field="assigneesSelect">'+assigneeOpts+'</select></td>'+
-      '<td><div class="status-cell"><select class="status-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select>'+starBtn+'</div></td>'+ /* 진행도 오른쪽으로 별 버튼 이동 */
+      '<td><div class="status-cell"><select class="status-select progress-select" data-collection="tasks" data-id="'+t.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select>'+starBtn+'</div></td>'+ /* 진행도 오른쪽으로 별 버튼 이동 */
       '<td><details class="filelink-details"><summary>📎'+(fileCount?' '+fileCount:'')+'</summary>'+renderFileLinks('tasks', t)+'</details></td>'+
       '<td><button class="icon-btn danger" data-action="del-row" data-collection="tasks" data-id="'+t.id+'" title="삭제">✕</button></td>'+
     '</tr>';
@@ -1218,6 +1294,7 @@
         '<div class="toolbar">'+
           '<label class="hide-done-toggle"><input type="checkbox" id="personalHideCompletedToggle"'+(state.personalHideCompleted?' checked':'')+'> 완료 항목 숨기기</label>'+
           (state.personalSortField ? '<button class="btn ghost sm" data-action="reset-personal-sort">↺ 정렬 초기화</button>' : '')+
+          '<button class="btn ghost" data-action="export-personal-csv">⬇ CSV 내보내기</button>'+
           '<button class="btn" data-action="add-personal" data-owner="'+owner+'">+ 추가</button>'+
         '</div>'+
       '</div>'+
@@ -1226,7 +1303,7 @@
         '<div class="table-scroll"><table><thead><tr>'+
         '<th data-action="sort-personal" data-field="category" class="sortable-th" style="min-width:92px">분류'+personalSortArrow('category')+'</th>'+
         '<th style="min-width:130px">이름</th><th style="min-width:260px">업무</th>'+
-        '<th data-action="sort-personal" data-field="status" class="sortable-th" style="min-width:110px">진행도'+personalSortArrow('status')+'</th>'+
+        '<th data-action="sort-personal" data-field="status" class="sortable-th" style="min-width:90px">진행도'+personalSortArrow('status')+'</th>'+
         '<th style="min-width:150px">기간</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
         '<tbody>'+rows+'</tbody></table></div>'
         : '<div class="empty-state">등록된 업무가 없습니다. "+ 추가"를 눌러 지금 하고 있는 공부/업무를 기록해보세요.</div>')+
@@ -1250,7 +1327,7 @@
       '<td><select class="tag-select" data-collection="personal" data-id="'+p.id+'" data-field="category" style="background:'+tc.bg+';color:'+tc.fg+';">'+catOpts+'</select></td>'+
       '<td><input type="text" class="cell-title-input" placeholder="이름" data-collection="personal" data-id="'+p.id+'" data-field="title" value="'+escapeHtml(p.title||'')+'"></td>'+
       '<td><textarea class="cell-textarea" placeholder="" data-collection="personal" data-id="'+p.id+'" data-field="content">'+escapeHtml(p.content||'')+'</textarea></td>'+
-      '<td><select class="status-select" data-collection="personal" data-id="'+p.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
+      '<td><select class="status-select progress-select" data-collection="personal" data-id="'+p.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
       '<td><div class="date-range">'+dateHtml+'</div></td>'+
       '<td style="text-align:center;"><input type="checkbox" data-collection="personal" data-id="'+p.id+'" data-field="followUp"'+(p.followUp?' checked':'')+'></td>'+
       '<td><textarea class="cell-textarea" placeholder=" " data-collection="personal" data-id="'+p.id+'" data-field="note">'+escapeHtml(p.note||'')+'</textarea></td>'+
@@ -1747,6 +1824,8 @@
     else if(action==='reset-task-sort'){ state.taskSortField = null; state.taskSortDir = 'asc'; renderActiveTab(); }
     else if(action==='reset-personal-sort'){ state.personalSortField = null; state.personalSortDir = 'asc'; renderActiveTab(); }
     else if(action==='reset-comm-sort'){ state.commSortField = null; state.commSortDir = 'asc'; renderActiveTab(); }
+    else if(action==='export-tasks-csv'){ exportTasksCsv(); }
+    else if(action==='export-personal-csv'){ exportPersonalCsv(); }
     else if(action==='toggle-person'){
       if(!requireFirebase()) return;
       var arrField = el.dataset.arrayField;
@@ -1879,6 +1958,10 @@
     if(t.dataset.field==='minor'){
       var mc2 = MINOR_CAT_COLORS[val] || (val ? hashColor(val) : {fg:'#888',bg:'#f0f0f0'});
       t.style.background = mc2.bg; t.style.color = mc2.fg;
+    }
+    if(t.dataset.field==='major' && t.dataset.collection==='tasks'){
+      var majc = CAT_COLORS[val] || {fg:'#888',bg:'#eee'};
+      t.style.background = majc.bg; t.style.color = majc.fg;
     }
     if(t.dataset.field==='direction' && DIRECTION_COLORS[val]){
       t.style.background = DIRECTION_COLORS[val].bg; t.style.color = DIRECTION_COLORS[val].fg;

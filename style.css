@@ -134,11 +134,13 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
 .cell-check-group{display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;align-items:center;}
 .cell-check-group label{display:flex;align-items:center;gap:4px;white-space:nowrap;}
 .status-select{font-weight:700;border-radius:999px !important;text-align:center;padding:6px 10px !important;font-size:12.5px;}
+/* 진행도(시작 전/진행 중/완료) select 폭을 조금 더 좁혔어요. */
+.status-select.progress-select{width:86px !important;padding:6px 6px !important;font-size:11.5px;}
 .task-title-cell{display:flex;align-items:center;gap:8px;}
 /* <select>는 width:auto/100%를 줘도 브라우저가 가장 긴 <option> 글자 기준으로 폭을 잡기 때문에,
    실제로 칸을 줄이려면 %가 아닌 고정 px width를 지정해요. 글자가 잘리지 않도록 소분류 글자 수(최대 3자)에
    맞춘 폭으로 넉넉히 잡았습니다. */
-.status-select.minor-select{width:80px !important;min-width:0 !important;flex-shrink:0;padding:5px 16px 5px 6px !important;font-size:11.5px;white-space:nowrap;}
+.status-select.minor-select{width:74px !important;min-width:0 !important;flex-shrink:0;padding:5px 12px 5px 8px !important;text-align:center;text-align-last:center;font-size:11.5px;white-space:nowrap;}
 .task-title-cell .cell-title-input{flex:1;min-width:0;}
 .date-range {
   display: flex;
@@ -153,21 +155,22 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
   display: inline-block;
 }
 
+/* "+ 마감일" 버튼(.btn.ghost.sm)과 색/디자인을 통일하고, 고정폭만 이 클래스에서 따로 지정해요. */
 .date-compact-btn {
   width: 78px; /* 고정 너비로 맞춤 */
   text-align: center;
   border: 1px solid var(--border);
-  background: #fafbfd;
-  border-radius: 6px;
+  background: #fff;
+  border-radius: 8px;
   padding: 5px 0;
-  font-size: 12px;
+  font-size: 11.5px;
   font-family: inherit;
+  font-weight: 700;
   color: var(--text);
   cursor: pointer;
   white-space: nowrap;
 }
 .date-compact-btn:hover{border-color:var(--primary);color:var(--primary);}
-.date-compact-btn.empty{color:var(--text-light);}
 .date-hidden-input{position:absolute !important;left:0;top:0;width:1px !important;height:1px !important;opacity:0;pointer-events:none;border:0 !important;padding:0 !important;}
 .tag-input, .tag-select{border-radius:6px;font-weight:600;}
 .tag-select{width:92px !important;max-width:92px;padding:5px 16px 5px 6px !important;font-size:11.5px;white-space:nowrap;}
@@ -273,6 +276,8 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
 .status-select-sm{font-size:11.5px;border:1px solid var(--border);border-radius:999px;padding:3px 8px;background:#fff;color:var(--text-light);flex-shrink:0;}
 /* 담당자 select: "지수·다경" 글자가 다 보이는 선에서 최대한 좁혀요. */
 .status-select-sm.assignee-select-sm{width:98px !important;padding:3px 16px 3px 6px !important;font-size:11.5px;}
+/* 대분류(행정/교육/중재) select: 예전엔 뱃지라 수정이 안 됐는데, 이제 select라서 잘못 고른 분류를 바로 고칠 수 있어요. */
+.status-select-sm.major-select-sm{width:56px !important;padding:3px 14px 3px 5px !important;font-size:11px;}
 
 /* 각자 업무리스트 체크리스트 */
 .check-item{border:1px solid var(--border);border-left:4px solid #d5d5d5;border-radius:10px;padding:10px 12px;margin-bottom:8px;}
