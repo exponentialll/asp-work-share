@@ -277,7 +277,7 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
 /* 담당자 select: "지수·다경" 글자가 다 보이는 선에서 최대한 좁혀요. */
 .status-select-sm.assignee-select-sm{width:98px !important;padding:3px 16px 3px 6px !important;font-size:11.5px;}
 /* 대분류(행정/교육/중재) select: 예전엔 뱃지라 수정이 안 됐는데, 이제 select라서 잘못 고른 분류를 바로 고칠 수 있어요. */
-.status-select-sm.major-select-sm{width:60px !important;padding:3px 5px 3px 5px !important;font-size:11px;}
+.status-select-sm.major-select-sm{width:65px !important;padding:3px 2px 3px 5px !important;font-size:11px;}
 
 /* 각자 업무리스트 체크리스트 */
 .check-item{border:1px solid var(--border);border-left:4px solid #d5d5d5;border-radius:10px;padding:10px 12px;margin-bottom:8px;}
