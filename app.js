@@ -1221,7 +1221,11 @@
       // "행정" 탭에서는 같은 진행도 안에서 월별→분기→반기→연간→비정기 순으로 한 번 더 나눠 보여줘요.
       var isAdminTab = state.taskActiveMajor==='행정';
       sorted = items.slice().sort(function(a,b){
-        var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
+        // 진행 중의 순서값이 0이라 "||9"로 쓰면 0이 falsy 취급돼서 진행 중이 9(맨 뒤)로 밀려버리는
+        // 버그가 있었어요. undefined인지 직접 확인하는 방식으로 고쳤어요.
+        var aOrd = STATUS_ORDER[a.status]===undefined ? 9 : STATUS_ORDER[a.status];
+        var bOrd = STATUS_ORDER[b.status]===undefined ? 9 : STATUS_ORDER[b.status];
+        var so = aOrd - bOrd;
         if(so!==0) return so;
         if(isAdminTab){
           var mo = minorSortIndex(a) - minorSortIndex(b);
@@ -1374,7 +1378,10 @@
           var dir = state.personalSortDir==='desc' ? -1 : 1;
           if(av!==bv) return (av<bv ? -1 : 1)*dir;
         }
-        var so = (STATUS_ORDER[a.status]||9) - (STATUS_ORDER[b.status]||9);
+        // 진행 중의 순서값이 0이라 "||9"로 쓰면 falsy 취급돼서 진행 중이 맨 뒤로 밀리는 버그가 있었어요.
+        var aOrd2 = STATUS_ORDER[a.status]===undefined ? 9 : STATUS_ORDER[a.status];
+        var bOrd2 = STATUS_ORDER[b.status]===undefined ? 9 : STATUS_ORDER[b.status];
+        var so = aOrd2 - bOrd2;
         if(so!==0) return so;
         return (b.clientTs||0)-(a.clientTs||0);
       });
