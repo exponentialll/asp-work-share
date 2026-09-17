@@ -341,11 +341,11 @@
     setSyncStatus(false, '동기화 오류 (Firestore 보안 규칙을 확인하세요)');
   }
 
-  var COLLECTIONS = ['tasks','announcements','personal','personalCategories','meetings','ideas','comms','manuals','files','dday','pins','recurring'];
-  var STATE_KEY = { tasks:'tasks', announcements:'announcements', personal:'personal', personalCategories:'personalCategories', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'dday', pins:'pins', recurring:'recurring' };
+  var COLLECTIONS = ['tasks','taskCategories','taskMinorCategories','announcements','personal','personalCategories','meetings','ideas','comms','manuals','files','dday','pins','recurring'];
+  var STATE_KEY = { tasks:'tasks', taskCategories:'taskCategories', taskMinorCategories:'taskMinorCategories', announcements:'announcements', personal:'personal', personalCategories:'personalCategories', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'dday', pins:'pins', recurring:'recurring' };
   // 캘린더 탭은 모든 컬렉션의 날짜를 모아 보여주므로, dday를 포함한 모든 컬렉션 변경이 캘린더도 함께 갱신시켜야 합니다.
   // pins는 사이드바 전용, recurring은 업무 리스트 탭 안의 패널에서 쓰이므로 tasks에 매핑합니다.
-  var TAB_FOR_COLLECTION = { tasks:'tasks', announcements:'announcements', personal:'personal', personalCategories:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar', pins:null, recurring:'tasks' };
+  var TAB_FOR_COLLECTION = { tasks:'tasks', taskCategories:'tasks', taskMinorCategories:'tasks', announcements:'announcements', personal:'personal', personalCategories:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar', pins:null, recurring:'tasks' };
 
   function attachListeners(){
     COLLECTIONS.forEach(function(col){
@@ -354,12 +354,69 @@
         onDataChanged(TAB_FOR_COLLECTION[col]);
         if(col==='meetings') ensureWeeklyMeeting();
         if(col==='tasks'){ ensureNotionImport(); migrateLegacyStatusLabel('tasks', state.tasks); }
+        if(col==='taskCategories') ensureTaskCategoriesSeed();
+        if(col==='taskMinorCategories') ensureTaskMinorCategoriesSeed();
         if(col==='comms'){ ensureNotionCommsImport(); migrateCommsWorkCategoryLabel(); }
         if(col==='personal'){ ensureNotionPersonalImport(); ensureNotionPersonalImportDayeong(); migrateLegacyStatusLabel('personal', state.personal); }
         if(col==='personalCategories'){ ensurePersonalCategoriesSeed(); migratePersonalCategoriesToOwner(); }
         if(col==='manuals') migrateRemovedManualCategory();
       }, handleSnapError);
     });
+  }
+  // 업무 리스트 "분류"(대분류)도 개별 업무리스트처럼 자유롭게 추가/이름수정/삭제할 수 있게 taskCategories
+  // 컬렉션에 목록을 저장해요. 업무 리스트는 지수·다경 공동 게시판이라 분류도 공용 목록 하나만 써요.
+  var taskCatSeedChecked = false;
+  function ensureTaskCategoriesSeed(){
+    if(!db || taskCatSeedChecked) return;
+    if(state.taskCategories.length>0){ taskCatSeedChecked = true; return; }
+    taskCatSeedChecked = true;
+    var markerId = 'task-categories-seeded';
+    db.collection('meta').doc(markerId).get().then(function(snap){
+      if(snap.exists) return;
+      var used = uniqNonEmpty(state.tasks.map(function(t){ return t.major; }));
+      var names = MAJOR_CATS.slice();
+      used.forEach(function(c){ if(names.indexOf(c)===-1) names.push(c); });
+      if(!names.length) return;
+      var batch = db.batch();
+      names.forEach(function(name, i){
+        var ref = db.collection('taskCategories').doc();
+        batch.set(ref, { name:name, order:i, createdAt:Date.now() });
+      });
+      batch.set(db.collection('meta').doc(markerId), { done:true, importedAt:Date.now() });
+      batch.commit().catch(function(err){ console.error(err); });
+    }).catch(function(err){ console.error(err); });
+  }
+  // 업무 리스트 "소분류"도 대분류와 같은 방식으로 추가/이름수정/삭제할 수 있게 taskMinorCategories 컬렉션에
+  // 목록을 저장해요. 소분류는 대분류별로 구성이 다르므로(행정은 월별/분기/... 나머지는 일간/주간/...),
+  // 문서마다 major 필드로 어느 대분류에 속하는지 구분합니다.
+  var taskMinorCatSeedChecked = false;
+  function ensureTaskMinorCategoriesSeed(){
+    if(!db || taskMinorCatSeedChecked) return;
+    if(state.taskMinorCategories.length>0){ taskMinorCatSeedChecked = true; return; }
+    taskMinorCatSeedChecked = true;
+    var markerId = 'task-minor-categories-seeded';
+    db.collection('meta').doc(markerId).get().then(function(snap){
+      if(snap.exists) return;
+      var majors = MAJOR_CATS.slice();
+      uniqNonEmpty(state.tasks.map(function(t){ return t.major; })).forEach(function(c){ if(majors.indexOf(c)===-1) majors.push(c); });
+      taskCategoryOptions(null).forEach(function(c){ if(majors.indexOf(c)===-1) majors.push(c); });
+      var batch = db.batch();
+      var any = false;
+      majors.forEach(function(major){
+        var base = major==='행정' ? ADMIN_MINOR_CATS : MINOR_CATS;
+        var used = uniqNonEmpty(state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===major; }).map(function(t){ return t.minor; }));
+        var names = base.slice();
+        used.forEach(function(c){ if(names.indexOf(c)===-1) names.push(c); });
+        names.forEach(function(name, i){
+          any = true;
+          var ref = db.collection('taskMinorCategories').doc();
+          batch.set(ref, { name:name, major:major, order:i, createdAt:Date.now() });
+        });
+      });
+      if(!any) return;
+      batch.set(db.collection('meta').doc(markerId), { done:true, importedAt:Date.now() });
+      batch.commit().catch(function(err){ console.error(err); });
+    }).catch(function(err){ console.error(err); });
   }
   // 개별 업무리스트 "분류"를 업무 리스트의 대분류 탭처럼 직접 추가/수정/삭제할 수 있게, 별도 컬렉션(personalCategories)에
   // 분류 목록을 저장해요. 지수·다경 각자 분류 목록이 따로 관리되도록 문서마다 owner 필드를 갖고 있어요.
@@ -860,11 +917,155 @@
     db.collection('personalCategories').doc(catDoc.id).delete().catch(function(err){ console.error(err); showToast('삭제 실패: '+err.message); });
   }
 
+  /* ---------------- 업무 리스트: 분류(대분류) 옵션 (taskCategories 컬렉션 기반, 공용 목록) ---------------- */
+  function taskCategoryOptions(current){
+    var all = (state.taskCategories||[]).slice()
+      .sort(function(a,b){ return (a.order||0)-(b.order||0); })
+      .map(function(c){ return c.name; });
+    var used = uniqNonEmpty(state.tasks.map(function(t){ return t.major; }));
+    used.forEach(function(c){ if(all.indexOf(c)===-1) all.push(c); });
+    if(current && all.indexOf(current)===-1) all.push(current);
+    return all;
+  }
+  function findTaskCategoryDoc(name){
+    return (state.taskCategories||[]).find(function(c){ return c.name===name; });
+  }
+  function addTaskCategory(name, cb){
+    name = (name||'').trim();
+    if(!name) return;
+    if(findTaskCategoryDoc(name)){ if(cb) cb(); return; }
+    if(!db) return;
+    var order = (state.taskCategories||[]).length;
+    db.collection('taskCategories').add({ name:name, order:order, createdAt:Date.now() })
+      .then(function(){ if(cb) cb(); })
+      .catch(function(err){ console.error(err); showToast('분류 추가 실패: '+err.message); });
+  }
+  // 분류 이름 수정: 이 분류를 쓰는 업무들도 한 번에 새 이름으로 옮겨줘요.
+  function renameTaskCategory(catDoc){
+    if(!db) return;
+    var newName = prompt('분류 이름 수정', catDoc.name);
+    if(newName===null) return;
+    newName = newName.trim();
+    if(!newName || newName===catDoc.name) return;
+    if(findTaskCategoryDoc(newName)){ showToast('이미 있는 분류 이름이에요'); return; }
+    var oldName = catDoc.name;
+    var batch = db.batch();
+    batch.update(db.collection('taskCategories').doc(catDoc.id), { name:newName });
+    state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===oldName; }).forEach(function(t){
+      batch.update(db.collection('tasks').doc(t.id), { major:newName });
+    });
+    batch.commit().then(function(){
+      if(state.taskActiveMajor===oldName) state.taskActiveMajor = newName;
+      showToast('분류 이름을 "'+newName+'"(으)로 바꿨어요');
+    }).catch(function(err){ console.error(err); showToast('수정 실패: '+err.message); });
+  }
+  // 분류 삭제: 아직 그 분류를 쓰는 업무가 있으면 삭제를 막아요.
+  function deleteTaskCategory(catDoc){
+    if(!db) return;
+    var inUse = state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===catDoc.name; }).length;
+    if(inUse>0){ showToast('"'+catDoc.name+'" 분류를 쓰는 업무가 '+inUse+'개 있어요. 먼저 다른 분류로 바꾼 뒤 삭제해주세요.'); return; }
+    if(!confirm('"'+catDoc.name+'" 분류를 삭제할까요?')) return;
+    db.collection('taskCategories').doc(catDoc.id).delete().then(function(){
+      if(state.taskActiveMajor===catDoc.name) state.taskActiveMajor = '전체';
+    }).catch(function(err){ console.error(err); showToast('삭제 실패: '+err.message); });
+  }
+  function renderTaskCatManagePanel(){
+    var cats = (state.taskCategories||[]).slice().sort(function(a,b){ return (a.order||0)-(b.order||0); });
+    var rows = cats.length ? cats.map(function(c){
+      var cnt = state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===c.name; }).length;
+      return '<div class="recur-row">'+
+        '<span style="flex:1;">'+escapeHtml(c.name)+' <span class="subtab-count">'+cnt+'개 사용중</span></span>'+
+        '<button class="icon-btn" data-action="rename-task-category" data-id="'+c.id+'" title="이름 수정">✎</button>'+
+        '<button class="icon-btn danger" data-action="delete-task-category" data-id="'+c.id+'" title="삭제">✕</button>'+
+      '</div>';
+    }).join('') : '<div class="comments-empty">아직 등록된 분류가 없습니다.</div>';
+    return '<div class="recur-panel">'+
+      '<div class="recur-panel-head"><strong style="font-size:12.5px;">🏷 분류 관리</strong></div>'+
+      rows+
+      '<div class="comment-add-row" style="margin-top:10px;">'+
+        '<input type="text" class="comment-input" id="newTaskCatInput" placeholder="새 분류 이름 (예: 연구)">'+
+        '<button class="btn ghost sm" data-action="add-task-category">+ 추가</button>'+
+      '</div>'+
+    '</div>';
+  }
+
+  /* ---------------- 업무 리스트: 소분류 옵션 (taskMinorCategories 컬렉션 기반, 대분류별로 분리) ---------------- */
+  function taskMinorCategoryOptions(current, major){
+    major = major || MAJOR_CATS[0];
+    var all = (state.taskMinorCategories||[]).filter(function(c){ return c.major===major; })
+      .slice()
+      .sort(function(a,b){ return (a.order||0)-(b.order||0); })
+      .map(function(c){ return c.name; });
+    var used = uniqNonEmpty(state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===major; }).map(function(t){ return t.minor; }));
+    used.forEach(function(c){ if(all.indexOf(c)===-1) all.push(c); });
+    if(current && all.indexOf(current)===-1) all.push(current);
+    return all;
+  }
+  function findTaskMinorCategoryDoc(name, major){
+    return (state.taskMinorCategories||[]).find(function(c){ return c.name===name && c.major===major; });
+  }
+  function addTaskMinorCategory(name, major, cb){
+    name = (name||'').trim();
+    major = major || MAJOR_CATS[0];
+    if(!name) return;
+    if(findTaskMinorCategoryDoc(name, major)){ if(cb) cb(); return; }
+    if(!db) return;
+    var order = (state.taskMinorCategories||[]).filter(function(c){ return c.major===major; }).length;
+    db.collection('taskMinorCategories').add({ name:name, major:major, order:order, createdAt:Date.now() })
+      .then(function(){ if(cb) cb(); })
+      .catch(function(err){ console.error(err); showToast('소분류 추가 실패: '+err.message); });
+  }
+  // 소분류 이름 수정: 같은 대분류에서 이 소분류를 쓰는 업무들도 한 번에 새 이름으로 옮겨줘요.
+  function renameTaskMinorCategory(catDoc){
+    if(!db) return;
+    var newName = prompt('소분류 이름 수정', catDoc.name);
+    if(newName===null) return;
+    newName = newName.trim();
+    if(!newName || newName===catDoc.name) return;
+    if(findTaskMinorCategoryDoc(newName, catDoc.major)){ showToast('이미 있는 소분류 이름이에요'); return; }
+    var oldName = catDoc.name;
+    var batch = db.batch();
+    batch.update(db.collection('taskMinorCategories').doc(catDoc.id), { name:newName });
+    state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===catDoc.major && (t.minor||'')===oldName; }).forEach(function(t){
+      batch.update(db.collection('tasks').doc(t.id), { minor:newName });
+    });
+    batch.commit().then(function(){
+      showToast('소분류 이름을 "'+newName+'"(으)로 바꿨어요');
+    }).catch(function(err){ console.error(err); showToast('수정 실패: '+err.message); });
+  }
+  // 소분류 삭제: 같은 대분류에서 아직 그 소분류를 쓰는 업무가 있으면 삭제를 막아요.
+  function deleteTaskMinorCategory(catDoc){
+    if(!db) return;
+    var inUse = state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===catDoc.major && (t.minor||'')===catDoc.name; }).length;
+    if(inUse>0){ showToast('"'+catDoc.name+'" 소분류를 쓰는 업무가 '+inUse+'개 있어요. 먼저 다른 소분류로 바꾼 뒤 삭제해주세요.'); return; }
+    if(!confirm('"'+catDoc.name+'" 소분류를 삭제할까요?')) return;
+    db.collection('taskMinorCategories').doc(catDoc.id).delete().catch(function(err){ console.error(err); showToast('삭제 실패: '+err.message); });
+  }
+  function renderTaskMinorCatManagePanel(major){
+    var cats = (state.taskMinorCategories||[]).filter(function(c){ return c.major===major; }).slice().sort(function(a,b){ return (a.order||0)-(b.order||0); });
+    var rows = cats.length ? cats.map(function(c){
+      var cnt = state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===major && (t.minor||'')===c.name; }).length;
+      return '<div class="recur-row">'+
+        '<span style="flex:1;">'+escapeHtml(c.name)+' <span class="subtab-count">'+cnt+'개 사용중</span></span>'+
+        '<button class="icon-btn" data-action="rename-task-minor-category" data-id="'+c.id+'" title="이름 수정">✎</button>'+
+        '<button class="icon-btn danger" data-action="delete-task-minor-category" data-id="'+c.id+'" title="삭제">✕</button>'+
+      '</div>';
+    }).join('') : '<div class="comments-empty">아직 등록된 소분류가 없습니다.</div>';
+    return '<div class="recur-panel">'+
+      '<div class="recur-panel-head"><strong style="font-size:12.5px;">🏷 "'+escapeHtml(major)+'" 소분류 관리</strong></div>'+
+      rows+
+      '<div class="comment-add-row" style="margin-top:10px;">'+
+        '<input type="text" class="comment-input" id="newTaskMinorCatInput" placeholder="새 소분류 이름 (예: 격월)">'+
+        '<button class="btn ghost sm" data-action="add-task-minor-category">+ 추가</button>'+
+      '</div>'+
+    '</div>';
+  }
+
   /* ---------------- State ---------------- */
   var state = {
     activeTab:'announcements',
     who: localStorage.getItem('asp_share_who') || '',
-    tasks: [], announcements: [], personal: [], personalCategories: [], meetings: [], ideas: [], comms: [], manuals: [], files: [], dday: [], pins: [], recurring: [],
+    tasks: [], taskCategories: [], taskMinorCategories: [], announcements: [], personal: [], personalCategories: [], meetings: [], ideas: [], comms: [], manuals: [], files: [], dday: [], pins: [], recurring: [],
     taskFilterPerson: 'all',
     taskFilterStatus: 'all',
     taskActiveMajor: '전체',
@@ -872,6 +1073,8 @@
     taskSortDir: 'asc',
     taskEndDateOpen: {},
     taskShowRecurringPanel: false,
+    taskCatManageOpen: false,
+    taskMinorCatManageOpen: false,
     personalActiveOwner: PEOPLE[0],
     personalActiveCategory: '전체',
     personalCatManageOpen: false,
@@ -1202,7 +1405,7 @@
   /* ================= 📋 업무 리스트 (대분류별 탭 + 전체 보기) ================= */
   // 소분류 정렬 순서: 행정 업무는 월별→분기→반기→연간→비정기 순으로, 그 외는 일반 소분류 순서로 비교해요.
   function minorSortIndex(t){
-    var order = (t.major||MAJOR_CATS[0])==='행정' ? ADMIN_MINOR_CATS : MINOR_CATS;
+    var order = taskMinorCategoryOptions(null, t.major||MAJOR_CATS[0]);
     var idx = order.indexOf(t.minor||'');
     return idx===-1 ? order.length : idx;
   }
@@ -1263,14 +1466,19 @@
     var sorted = sortTasks(filtered);
     var showMajorCol = activeMajor==='전체';
 
-    var allTabs = ['전체'].concat(MAJOR_CATS);
+    // 분류(대분류)도 개별 업무리스트처럼 taskCategories 컬렉션 기반이라 자유롭게 추가/이름수정/삭제할 수 있어요.
+    var allTabs = ['전체'].concat(taskCategoryOptions(null));
     var tabsHtml = allTabs.map(function(cat){
       var cnt = cat==='전체' ? state.tasks.length : state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===cat; }).length;
-      var cc = cat==='전체' ? SHARED_COLOR : CAT_COLORS[cat];
+      var cc = cat==='전체' ? SHARED_COLOR : (CAT_COLORS[cat] || hashColor(cat));
       var isActive = cat===activeMajor;
       var style = isActive ? 'background:'+cc.bg+';color:'+cc.fg+';border-color:'+cc.bg+';' : '';
       return '<button class="subtab-btn" data-action="task-set-major" data-major="'+cat+'" style="'+style+'">'+cat+' <span class="subtab-count">'+cnt+'</span></button>';
     }).join('');
+    var taskCatManagePanel = state.taskCatManageOpen ? renderTaskCatManagePanel() : '';
+    // 소분류는 대분류별로 구성이 다르므로, 특정 대분류 탭을 골랐을 때만 소분류 관리 버튼을 보여줘요.
+    var showMinorCatManageBtn = activeMajor!=='전체';
+    var taskMinorCatManagePanel = (state.taskMinorCatManageOpen && showMinorCatManageBtn) ? renderTaskMinorCatManagePanel(activeMajor) : '';
 
     var headRow = '<tr>'+
       (showMajorCol ? '<th style="min-width:56px">분류</th>' : '')+
@@ -1300,11 +1508,15 @@
           '<select id="filterStatus">'+statusOpts+'</select>'+
           '<label class="hide-done-toggle"><input type="checkbox" id="hideCompletedToggle"'+(state.taskHideCompleted?' checked':'')+'> 완료 항목 숨기기</label>'+
           (state.taskSortField ? '<button class="btn ghost sm" data-action="reset-task-sort">↺ 정렬 초기화</button>' : '')+
+          '<button class="btn ghost" data-action="toggle-task-cat-manage">'+(state.taskCatManageOpen?'✅ 분류 관리 닫기':'🏷 분류 관리')+'</button>'+
+          (showMinorCatManageBtn ? '<button class="btn ghost" data-action="toggle-task-minor-cat-manage">'+(state.taskMinorCatManageOpen?'✅ 소분류 관리 닫기':'🏷 소분류 관리')+'</button>' : '')+
           '<button class="btn ghost" data-action="toggle-recurring-panel">'+(state.taskShowRecurringPanel?'✅ 정기업무 닫기':'✅ 정기업무 현황')+'</button>'+
           '<button class="btn" data-action="add-task">+ 업무 추가</button>'+
         '</div>'+
       '</div>'+
       recurringPanel+
+      taskCatManagePanel+
+      taskMinorCatManagePanel+
       '<div class="subtab-bar">'+tabsHtml+'</div>'+
       tableHtml+
     '</div>';
@@ -1313,12 +1525,11 @@
   function renderTaskRow(t, showMajorCol){
     // 분류(대분류)를 잘못 골랐을 때 직접 고칠 수 있도록 뱃지 대신 select로 보여줘요.
     var curMajor = t.major || MAJOR_CATS[0];
-    var majorOpts = MAJOR_CATS.map(function(c){ return '<option value="'+c+'"'+(curMajor===c?' selected':'')+'>'+c+'</option>'; }).join('');
-    var majorColor = CAT_COLORS[curMajor] || {fg:'#888',bg:'#eee'};
+    var majorOpts = taskCategoryOptions(curMajor).map(function(c){ return '<option value="'+c+'"'+(curMajor===c?' selected':'')+'>'+c+'</option>'; }).join('')+
+      '<option value="__new__">+ 직접 추가...</option>';
+    var majorColor = CAT_COLORS[curMajor] || hashColor(curMajor);
     var curMinor = t.minor || '';
-    var minorSource = (t.major||MAJOR_CATS[0])==='행정' ? ADMIN_MINOR_CATS : MINOR_CATS;
-    var minorOptionsList = minorSource.slice();
-    if(curMinor && minorOptionsList.indexOf(curMinor)===-1) minorOptionsList.push(curMinor);
+    var minorOptionsList = taskMinorCategoryOptions(curMinor, t.major||MAJOR_CATS[0]);
     var minorOpts = '<option value="">-</option>'+
       minorOptionsList.map(function(c){ return '<option value="'+c+'"'+(curMinor===c?' selected':'')+'>'+escapeHtml(c)+'</option>'; }).join('')+
       '<option value="__new__">+ 직접 추가...</option>';
@@ -1923,6 +2134,39 @@
       var catDocD = (state.personalCategories||[]).find(function(c){ return c.id===id; });
       if(catDocD) deletePersonalCategory(catDocD);
     }
+    else if(action==='toggle-task-cat-manage'){ state.taskCatManageOpen = !state.taskCatManageOpen; renderActiveTab(); }
+    else if(action==='add-task-category'){
+      var taskCatInputEl = document.getElementById('newTaskCatInput');
+      var newTaskCatName = taskCatInputEl ? taskCatInputEl.value : '';
+      if(!newTaskCatName || !newTaskCatName.trim()){ showToast('분류 이름을 입력해주세요'); return; }
+      if(findTaskCategoryDoc(newTaskCatName.trim())){ showToast('이미 있는 분류 이름이에요'); return; }
+      addTaskCategory(newTaskCatName.trim(), function(){ showToast('분류를 추가했어요'); });
+    }
+    else if(action==='rename-task-category'){
+      var taskCatDocR = (state.taskCategories||[]).find(function(c){ return c.id===id; });
+      if(taskCatDocR) renameTaskCategory(taskCatDocR);
+    }
+    else if(action==='delete-task-category'){
+      var taskCatDocD = (state.taskCategories||[]).find(function(c){ return c.id===id; });
+      if(taskCatDocD) deleteTaskCategory(taskCatDocD);
+    }
+    else if(action==='toggle-task-minor-cat-manage'){ state.taskMinorCatManageOpen = !state.taskMinorCatManageOpen; renderActiveTab(); }
+    else if(action==='add-task-minor-category'){
+      var taskMinorCatInputEl = document.getElementById('newTaskMinorCatInput');
+      var newTaskMinorCatName = taskMinorCatInputEl ? taskMinorCatInputEl.value : '';
+      if(!newTaskMinorCatName || !newTaskMinorCatName.trim()){ showToast('소분류 이름을 입력해주세요'); return; }
+      var curMajorForMinor = state.taskActiveMajor==='전체' ? MAJOR_CATS[0] : state.taskActiveMajor;
+      if(findTaskMinorCategoryDoc(newTaskMinorCatName.trim(), curMajorForMinor)){ showToast('이미 있는 소분류 이름이에요'); return; }
+      addTaskMinorCategory(newTaskMinorCatName.trim(), curMajorForMinor, function(){ showToast('소분류를 추가했어요'); });
+    }
+    else if(action==='rename-task-minor-category'){
+      var taskMinorCatDocR = (state.taskMinorCategories||[]).find(function(c){ return c.id===id; });
+      if(taskMinorCatDocR) renameTaskMinorCategory(taskMinorCatDocR);
+    }
+    else if(action==='delete-task-minor-category'){
+      var taskMinorCatDocD = (state.taskMinorCategories||[]).find(function(c){ return c.id===id; });
+      if(taskMinorCatDocD) deleteTaskMinorCategory(taskMinorCatDocD);
+    }
     else if(action==='manual-set-cat'){ state.manualActiveCat = el.dataset.cat; state.manualActiveCadence = 'all'; renderActiveTab(); }
     else if(action==='manual-set-cadence'){ state.manualActiveCadence = el.dataset.cadence; renderActiveTab(); }
     else if(action==='open-manual'){ state.manualActiveId = id; renderActiveTab(); }
@@ -2102,7 +2346,25 @@
     }
     if(t.dataset.field==='minor' && t.dataset.collection==='tasks' && t.value==='__new__'){
       var newMinor = prompt('새 소분류 이름을 입력하세요');
-      if(newMinor && newMinor.trim()){ flushSaveNow('tasks', t.dataset.id, 'minor', newMinor.trim()); }
+      if(newMinor && newMinor.trim()){
+        var newMinorTrim = newMinor.trim();
+        var itemForMinor = state.tasks.find(function(x){ return x.id===t.dataset.id; });
+        var majorForNewMinor = itemForMinor ? (itemForMinor.major||MAJOR_CATS[0]) : MAJOR_CATS[0];
+        // taskMinorCategories 컬렉션에도 같이 등록해서, 소분류 관리 패널/옵션에도 바로 나타나게 해요.
+        addTaskMinorCategory(newMinorTrim, majorForNewMinor, function(){});
+        flushSaveNow('tasks', t.dataset.id, 'minor', newMinorTrim);
+      }
+      else { renderActiveTab(); }
+      return;
+    }
+    if(t.dataset.field==='major' && t.dataset.collection==='tasks' && t.value==='__new__'){
+      var newMajor = prompt('새 분류 이름을 입력하세요');
+      if(newMajor && newMajor.trim()){
+        var newMajorTrim = newMajor.trim();
+        // taskCategories 컬렉션에도 같이 등록해서, 분류 관리 패널/탭에도 바로 나타나게 해요.
+        addTaskCategory(newMajorTrim, function(){});
+        flushSaveNow('tasks', t.dataset.id, 'major', newMajorTrim);
+      }
       else { renderActiveTab(); }
       return;
     }
@@ -2131,8 +2393,8 @@
       var mc2 = MINOR_CAT_COLORS[val] || (val ? hashColor(val) : {fg:'#888',bg:'#f0f0f0'});
       t.style.background = mc2.bg; t.style.color = mc2.fg;
     }
-    if(t.dataset.field==='major' && t.dataset.collection==='tasks'){
-      var majc = CAT_COLORS[val] || {fg:'#888',bg:'#eee'};
+    if(t.dataset.field==='major' && t.dataset.collection==='tasks' && val!=='__new__'){
+      var majc = CAT_COLORS[val] || hashColor(val);
       t.style.background = majc.bg; t.style.color = majc.fg;
     }
     if(t.dataset.field==='direction' && DIRECTION_COLORS[val]){
