@@ -191,10 +191,10 @@
     showToast('CSV 파일을 내려받았어요');
   }
   function exportPersonalCsv(){
-    var rows = [['담당자','분류','소분류','이름','업무','진행도','시작일','마감일','F/U','비고']];
+    var rows = [['담당자','분류','이름','업무','진행도','시작일','마감일','F/U','비고']];
     state.personal.forEach(function(p){
       rows.push([
-        p.owner||'', p.category||'', p.minor||'', p.title||'', p.content||'', p.status||'',
+        p.owner||'', p.category||'', p.title||'', p.content||'', p.status||'',
         p.startDate||'', p.deadline||'', p.followUp?'O':'', p.note||''
       ]);
     });
@@ -342,11 +342,11 @@
     setSyncStatus(false, '동기화 오류 (Firestore 보안 규칙을 확인하세요)');
   }
 
-  var COLLECTIONS = ['tasks','taskCategories','taskMinorCategories','announcements','personal','personalCategories','personalMinorCategories','meetings','ideas','comms','manuals','files','dday','pins','recurring'];
-  var STATE_KEY = { tasks:'tasks', taskCategories:'taskCategories', taskMinorCategories:'taskMinorCategories', announcements:'announcements', personal:'personal', personalCategories:'personalCategories', personalMinorCategories:'personalMinorCategories', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'dday', pins:'pins', recurring:'recurring' };
+  var COLLECTIONS = ['tasks','taskCategories','taskMinorCategories','announcements','personal','personalCategories','meetings','ideas','comms','manuals','files','dday','pins','recurring'];
+  var STATE_KEY = { tasks:'tasks', taskCategories:'taskCategories', taskMinorCategories:'taskMinorCategories', announcements:'announcements', personal:'personal', personalCategories:'personalCategories', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'dday', pins:'pins', recurring:'recurring' };
   // 캘린더 탭은 모든 컬렉션의 날짜를 모아 보여주므로, dday를 포함한 모든 컬렉션 변경이 캘린더도 함께 갱신시켜야 합니다.
   // pins는 사이드바 전용, recurring은 업무 리스트 탭 안의 패널에서 쓰이므로 tasks에 매핑합니다.
-  var TAB_FOR_COLLECTION = { tasks:'tasks', taskCategories:'tasks', taskMinorCategories:'tasks', announcements:'announcements', personal:'personal', personalCategories:'personal', personalMinorCategories:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar', pins:null, recurring:'tasks' };
+  var TAB_FOR_COLLECTION = { tasks:'tasks', taskCategories:'tasks', taskMinorCategories:'tasks', announcements:'announcements', personal:'personal', personalCategories:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar', pins:null, recurring:'tasks' };
 
   function attachListeners(){
     COLLECTIONS.forEach(function(col){
@@ -360,7 +360,6 @@
         if(col==='comms'){ ensureNotionCommsImport(); migrateCommsWorkCategoryLabel(); }
         if(col==='personal'){ ensureNotionPersonalImport(); ensureNotionPersonalImportDayeong(); migrateLegacyStatusLabel('personal', state.personal); }
         if(col==='personalCategories'){ ensurePersonalCategoriesSeed(); migratePersonalCategoriesToOwner(); }
-        if(col==='personalMinorCategories') ensurePersonalMinorCategoriesSeed();
         if(col==='manuals') migrateRemovedManualCategory();
       }, handleSnapError);
     });
@@ -468,36 +467,6 @@
       batch.delete(db.collection('personalCategories').doc(c.id));
     });
     batch.commit().catch(function(err){ console.error(err); });
-  }
-
-  // 개별 업무리스트도 업무리스트처럼 "분류(대분류) 안에 소분류" 두 단계 구조를 쓸 수 있게, 사람+대분류별로
-  // 소분류 목록을 저장하는 personalMinorCategories 컬렉션을 둡니다. 소분류는 지수·다경 각자 분류마다
-  // 따로 관리되고, 처음엔 비어있다가 사용자가 직접 추가하는 방식이에요(기존에 쓰던 소분류 값이 있으면 그것만 자동 반영).
-  var personalMinorCatSeedChecked = false;
-  function ensurePersonalMinorCategoriesSeed(){
-    if(!db || personalMinorCatSeedChecked) return;
-    if(state.personalMinorCategories.length>0){ personalMinorCatSeedChecked = true; return; }
-    personalMinorCatSeedChecked = true;
-    var markerId = 'personal-minor-categories-seeded';
-    db.collection('meta').doc(markerId).get().then(function(snap){
-      if(snap.exists) return;
-      var batch = db.batch();
-      var any = false;
-      PEOPLE.forEach(function(owner){
-        var majors = personalCategoryOptions(null, owner);
-        majors.forEach(function(major){
-          var used = uniqNonEmpty(state.personal.filter(function(p){ return p.owner===owner && (p.category||'')===major; }).map(function(p){ return p.minor; }));
-          used.forEach(function(name, i){
-            any = true;
-            var ref = db.collection('personalMinorCategories').doc();
-            batch.set(ref, { name:name, owner:owner, major:major, order:i, createdAt:Date.now() });
-          });
-        });
-      });
-      if(!any) return;
-      batch.set(db.collection('meta').doc(markerId), { done:true, importedAt:Date.now() });
-      batch.commit().catch(function(err){ console.error(err); });
-    }).catch(function(err){ console.error(err); });
   }
 
   // "개인 공부" 분류를 없앴는데 예전에 그 분류로 저장된 매뉴얼이 있으면 분류 탭 어디에도 안 걸려서
@@ -949,74 +918,6 @@
     db.collection('personalCategories').doc(catDoc.id).delete().catch(function(err){ console.error(err); showToast('삭제 실패: '+err.message); });
   }
 
-  /* ---------------- 각자 업무리스트: 소분류 옵션 (personalMinorCategories 컬렉션 기반, 사람+대분류별로 분리) ---------------- */
-  function personalMinorCategoryOptions(current, owner, major){
-    major = major || PERSONAL_BASE_CATS[0];
-    var all = (state.personalMinorCategories||[]).filter(function(c){ return c.owner===owner && c.major===major; })
-      .sort(function(a,b){ return (a.order||0)-(b.order||0); })
-      .map(function(c){ return c.name; });
-    var used = uniqNonEmpty(state.personal.filter(function(p){ return p.owner===owner && (p.category||'')===major; }).map(function(p){ return p.minor; }));
-    used.forEach(function(c){ if(all.indexOf(c)===-1) all.push(c); });
-    if(current && all.indexOf(current)===-1) all.push(current);
-    return all;
-  }
-  function findPersonalMinorCategoryDoc(name, owner, major){
-    return (state.personalMinorCategories||[]).find(function(c){ return c.name===name && c.owner===owner && c.major===major; });
-  }
-  function addPersonalMinorCategory(name, owner, major, cb){
-    name = (name||'').trim();
-    if(!name) return;
-    if(findPersonalMinorCategoryDoc(name, owner, major)){ if(cb) cb(); return; }
-    if(!db) return;
-    var order = (state.personalMinorCategories||[]).filter(function(c){ return c.owner===owner && c.major===major; }).length;
-    db.collection('personalMinorCategories').add({ name:name, owner:owner, major:major, order:order, createdAt:Date.now() })
-      .then(function(){ if(cb) cb(); })
-      .catch(function(err){ console.error(err); showToast('소분류 추가 실패: '+err.message); });
-  }
-  // 소분류 이름 수정: 같은 사람의 같은 대분류에서 이 소분류를 쓰던 항목들도 한 번에 새 이름으로 옮겨줘요.
-  function renamePersonalMinorCategory(catDoc){
-    if(!db) return;
-    var newName = prompt('소분류 이름 수정', catDoc.name);
-    if(newName===null) return;
-    newName = newName.trim();
-    if(!newName || newName===catDoc.name) return;
-    if(findPersonalMinorCategoryDoc(newName, catDoc.owner, catDoc.major)){ showToast('이미 있는 소분류 이름이에요'); return; }
-    var oldName = catDoc.name;
-    var batch = db.batch();
-    batch.update(db.collection('personalMinorCategories').doc(catDoc.id), { name:newName });
-    state.personal.filter(function(p){ return p.owner===catDoc.owner && (p.category||'')===catDoc.major && (p.minor||'')===oldName; }).forEach(function(p){
-      batch.update(db.collection('personal').doc(p.id), { minor:newName });
-    });
-    batch.commit().then(function(){ showToast('소분류 이름을 "'+newName+'"(으)로 바꿨어요'); }).catch(function(err){ console.error(err); showToast('수정 실패: '+err.message); });
-  }
-  // 소분류 삭제: 같은 사람의 같은 대분류에서 아직 그 소분류를 쓰는 항목이 있으면 삭제를 막아요.
-  function deletePersonalMinorCategory(catDoc){
-    if(!db) return;
-    var inUse = state.personal.filter(function(p){ return p.owner===catDoc.owner && (p.category||'')===catDoc.major && (p.minor||'')===catDoc.name; }).length;
-    if(inUse>0){ showToast('"'+catDoc.name+'" 소분류를 쓰는 항목이 '+inUse+'개 있어요. 먼저 다른 소분류로 바꾼 뒤 삭제해주세요.'); return; }
-    if(!confirm('"'+catDoc.name+'" 소분류를 삭제할까요?')) return;
-    db.collection('personalMinorCategories').doc(catDoc.id).delete().catch(function(err){ console.error(err); showToast('삭제 실패: '+err.message); });
-  }
-  function renderPersonalMinorCatManagePanel(owner, major){
-    var cats = (state.personalMinorCategories||[]).filter(function(c){ return c.owner===owner && c.major===major; }).sort(function(a,b){ return (a.order||0)-(b.order||0); });
-    var rows = cats.length ? cats.map(function(c){
-      var cnt = state.personal.filter(function(p){ return p.owner===owner && (p.category||'')===major && (p.minor||'')===c.name; }).length;
-      return '<div class="recur-row">'+
-        '<span style="flex:1;">'+escapeHtml(c.name)+' <span class="subtab-count">'+cnt+'개 사용중</span></span>'+
-        '<button class="icon-btn" data-action="rename-personal-minor-category" data-id="'+c.id+'" title="이름 수정">✎</button>'+
-        '<button class="icon-btn danger" data-action="delete-personal-minor-category" data-id="'+c.id+'" title="삭제">✕</button>'+
-      '</div>';
-    }).join('') : '<div class="comments-empty">아직 등록된 소분류가 없습니다.</div>';
-    return '<div class="recur-panel">'+
-      '<div class="recur-panel-head"><strong style="font-size:12.5px;">🏷 "'+escapeHtml(major)+'" 소분류 관리</strong></div>'+
-      rows+
-      '<div class="comment-add-row" style="margin-top:10px;">'+
-        '<input type="text" class="comment-input" id="newPersonalMinorCatInput" placeholder="새 소분류 이름">'+
-        '<button class="btn ghost sm" data-action="add-personal-minor-category">+ 추가</button>'+
-      '</div>'+
-    '</div>';
-  }
-
   /* ---------------- 업무 리스트: 분류(대분류) 옵션 (taskCategories 컬렉션 기반, 공용 목록) ---------------- */
   function taskCategoryOptions(current){
     var all = (state.taskCategories||[]).slice()
@@ -1165,7 +1066,7 @@
   var state = {
     activeTab:'announcements',
     who: localStorage.getItem('asp_share_who') || '',
-    tasks: [], taskCategories: [], taskMinorCategories: [], announcements: [], personal: [], personalCategories: [], personalMinorCategories: [], meetings: [], ideas: [], comms: [], manuals: [], files: [], dday: [], pins: [], recurring: [],
+    tasks: [], taskCategories: [], taskMinorCategories: [], announcements: [], personal: [], personalCategories: [], meetings: [], ideas: [], comms: [], manuals: [], files: [], dday: [], pins: [], recurring: [],
     taskFilterPerson: 'all',
     taskFilterStatus: 'all',
     taskActiveMajor: '전체',
@@ -1178,7 +1079,6 @@
     personalActiveOwner: PEOPLE[0],
     personalActiveCategory: '전체',
     personalCatManageOpen: false,
-    personalMinorCatManageOpen: false,
     personalDeadlineOpen: {},
     personalSortField: null,
     personalSortDir: 'asc',
@@ -1721,9 +1621,6 @@
       return '<button class="subtab-btn" data-action="personal-set-category" data-category="'+escapeHtml(cat)+'" style="'+style+'">'+escapeHtml(cat)+' <span class="subtab-count">'+cnt+'</span></button>';
     }).join('');
     var catManagePanel = state.personalCatManageOpen ? renderPersonalCatManagePanel(owner) : '';
-    // 소분류는 대분류(분류) 안에서 사람마다 따로 관리되므로, "전체"가 아니라 특정 분류 탭을 골랐을 때만 버튼을 보여줘요.
-    var showMinorCatManageBtn = activeCat!=='전체';
-    var minorCatManagePanel = (state.personalMinorCatManageOpen && showMinorCatManageBtn) ? renderPersonalMinorCatManagePanel(owner, activeCat) : '';
     // 분류 색깔만으로는 비슷한 색이 나올 수 있어 구분이 잘 안 될 때가 있어서, "분류"나 "진행도" 열
     // 제목을 누르면 그 기준으로 모아서/순서대로 볼 수 있게 정렬 토글을 붙였어요.
     function personalSortArrow(field){
@@ -1736,18 +1633,15 @@
           '<label class="hide-done-toggle"><input type="checkbox" id="personalHideCompletedToggle"'+(state.personalHideCompleted?' checked':'')+'> 완료 항목 숨기기</label>'+
           (state.personalSortField ? '<button class="btn ghost sm" data-action="reset-personal-sort">↺ 정렬 초기화</button>' : '')+
           '<button class="btn ghost" data-action="toggle-personal-cat-manage">'+(state.personalCatManageOpen?'✅ 분류 관리 닫기':'🏷 분류 관리')+'</button>'+
-          (showMinorCatManageBtn ? '<button class="btn ghost" data-action="toggle-personal-minor-cat-manage">'+(state.personalMinorCatManageOpen?'✅ 소분류 관리 닫기':'🏷 소분류 관리')+'</button>' : '')+
           '<button class="btn" data-action="add-personal" data-owner="'+owner+'">+ 추가</button>'+
         '</div>'+
       '</div>'+
       '<div class="sheet-tab-bar">'+tabsHtml+'</div>'+
       catManagePanel+
-      minorCatManagePanel+
       '<div class="subtab-bar">'+catTabsHtml+'</div>'+
       (items.length ?
         '<div class="table-scroll"><table><thead><tr>'+
         '<th data-action="sort-personal" data-field="category" class="sortable-th" style="min-width:92px">분류'+personalSortArrow('category')+'</th>'+
-        '<th style="min-width:78px">소분류</th>'+
         '<th style="min-width:130px">이름</th><th style="min-width:260px">업무</th>'+
         '<th data-action="sort-personal" data-field="status" class="sortable-th" style="min-width:90px">진행도'+personalSortArrow('status')+'</th>'+
         '<th style="min-width:150px">기간</th><th style="min-width:50px">F/U</th><th style="min-width:140px">비고</th><th style="min-width:100px">첨부</th><th></th></tr></thead>'+
@@ -1780,13 +1674,6 @@
     var catOptions = personalCategoryOptions(p.category, p.owner);
     var catOpts = catOptions.map(function(c){ return '<option value="'+c+'"'+(p.category===c?' selected':'')+'>'+c+'</option>'; }).join('') + '<option value="__new__">+ 직접 추가...</option>';
     var tc = PERSONAL_CAT_COLORS[p.category] || (p.category ? hashColor(p.category) : {fg:'#888',bg:'#f0f0f0'});
-    var pMajor = p.category || PERSONAL_BASE_CATS[0];
-    var curMinor = p.minor || '';
-    var minorOptionsList = personalMinorCategoryOptions(curMinor, p.owner, pMajor);
-    var minorOpts = '<option value="">-</option>'+
-      minorOptionsList.map(function(c){ return '<option value="'+c+'"'+(curMinor===c?' selected':'')+'>'+escapeHtml(c)+'</option>'; }).join('')+
-      '<option value="__new__">+ 직접 추가...</option>';
-    var mnc = curMinor ? hashColor(curMinor) : {fg:'#888',bg:'#f0f0f0'};
     var curStatus = p.status || '시작 전';
     var sc = STATUS_COLORS[curStatus] || {fg:'#888',bg:'#eee'};
     var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
@@ -1799,7 +1686,6 @@
     var fileCount = (p.files||[]).length;
     return '<tr data-id="'+p.id+'">'+
       '<td><select class="tag-select" data-collection="personal" data-id="'+p.id+'" data-field="category" style="background:'+tc.bg+';color:'+tc.fg+';">'+catOpts+'</select></td>'+
-      '<td><select class="status-select minor-select" data-collection="personal" data-id="'+p.id+'" data-field="minor" style="background:'+mnc.bg+';color:'+mnc.fg+';">'+minorOpts+'</select></td>'+
       '<td><input type="text" class="cell-title-input" placeholder="이름" data-collection="personal" data-id="'+p.id+'" data-field="title" value="'+escapeHtml(p.title||'')+'"></td>'+
       '<td><textarea class="cell-textarea" placeholder="" data-collection="personal" data-id="'+p.id+'" data-field="content">'+escapeHtml(p.content||'')+'</textarea></td>'+
       '<td><select class="status-select progress-select" data-collection="personal" data-id="'+p.id+'" data-field="status" style="background:'+sc.bg+';color:'+sc.fg+';">'+statusOpts+'</select></td>'+
@@ -2249,24 +2135,6 @@
       var catDocD = (state.personalCategories||[]).find(function(c){ return c.id===id; });
       if(catDocD) deletePersonalCategory(catDocD);
     }
-    else if(action==='toggle-personal-minor-cat-manage'){ state.personalMinorCatManageOpen = !state.personalMinorCatManageOpen; renderActiveTab(); }
-    else if(action==='add-personal-minor-category'){
-      var minorInputEl = document.getElementById('newPersonalMinorCatInput');
-      var newMinorCatName = minorInputEl ? minorInputEl.value : '';
-      var ownerForNewMinorCat = state.personalActiveOwner || PEOPLE[0];
-      var majorForNewMinorCat = (state.personalActiveCategory && state.personalActiveCategory!=='전체') ? state.personalActiveCategory : PERSONAL_BASE_CATS[0];
-      if(!newMinorCatName || !newMinorCatName.trim()){ showToast('소분류 이름을 입력해주세요'); return; }
-      if(findPersonalMinorCategoryDoc(newMinorCatName.trim(), ownerForNewMinorCat, majorForNewMinorCat)){ showToast('이미 있는 소분류 이름이에요'); return; }
-      addPersonalMinorCategory(newMinorCatName.trim(), ownerForNewMinorCat, majorForNewMinorCat, function(){ showToast('소분류를 추가했어요'); });
-    }
-    else if(action==='rename-personal-minor-category'){
-      var minorCatDocR = (state.personalMinorCategories||[]).find(function(c){ return c.id===id; });
-      if(minorCatDocR) renamePersonalMinorCategory(minorCatDocR);
-    }
-    else if(action==='delete-personal-minor-category'){
-      var minorCatDocD = (state.personalMinorCategories||[]).find(function(c){ return c.id===id; });
-      if(minorCatDocD) deletePersonalMinorCategory(minorCatDocD);
-    }
     else if(action==='toggle-task-cat-manage'){ state.taskCatManageOpen = !state.taskCatManageOpen; renderActiveTab(); }
     else if(action==='add-task-category'){
       var taskCatInputEl = document.getElementById('newTaskCatInput');
@@ -2486,20 +2354,6 @@
         // taskMinorCategories 컬렉션에도 같이 등록해서, 소분류 관리 패널/옵션에도 바로 나타나게 해요.
         addTaskMinorCategory(newMinorTrim, majorForNewMinor, function(){});
         flushSaveNow('tasks', t.dataset.id, 'minor', newMinorTrim);
-      }
-      else { renderActiveTab(); }
-      return;
-    }
-    if(t.dataset.field==='minor' && t.dataset.collection==='personal' && t.value==='__new__'){
-      var newPMinor = prompt('새 소분류 이름을 입력하세요');
-      if(newPMinor && newPMinor.trim()){
-        var newPMinorTrim = newPMinor.trim();
-        var itemForPMinor = state.personal.find(function(x){ return x.id===t.dataset.id; });
-        var ownerForNewPMinor = itemForPMinor ? itemForPMinor.owner : (state.personalActiveOwner||PEOPLE[0]);
-        var majorForNewPMinor = itemForPMinor ? (itemForPMinor.category||PERSONAL_BASE_CATS[0]) : PERSONAL_BASE_CATS[0];
-        // personalMinorCategories 컬렉션에도 같이 등록해서, 소분류 관리 패널/옵션에도 바로 나타나게 해요.
-        addPersonalMinorCategory(newPMinorTrim, ownerForNewPMinor, majorForNewPMinor, function(){});
-        flushSaveNow('personal', t.dataset.id, 'minor', newPMinorTrim);
       }
       else { renderActiveTab(); }
       return;
