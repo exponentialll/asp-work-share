@@ -1326,6 +1326,7 @@
   }
   function matchesCalFilter(item){
     // 중요 일정(D-day)과 공동 일정은 항상 보여주고, 개인 일정만 사람별 체크박스로 켜고 끌 수 있어요.
+    if(item.collection==='leaves') return true; // 연차는 체크박스와 상관없이 항상 보여요.
     if(item.cls.type!=='개인') return true;
     return !!state.calShowPersonal[item.cls.owner];
   }
