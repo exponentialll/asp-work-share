@@ -1894,7 +1894,12 @@
   }
   function sortComms(items){
     if(!state.commSortField){
-      return items.slice().sort(function(a,b){ return (b.clientTs||0)-(a.clientTs||0); });
+      // 기본 정렬: 소통 날짜가 최근인 것부터(날짜가 같으면 먼저 등록한 게 아래로). 날짜를 고치면 자동으로 순서가 바뀌어요.
+      return items.slice().sort(function(a,b){
+        var d = (b.date||'').localeCompare(a.date||'');
+        if(d!==0) return d;
+        return (b.clientTs||0)-(a.clientTs||0);
+      });
     }
     var dir = state.commSortDir==='desc' ? -1 : 1;
     return items.slice().sort(function(a,b){
