@@ -311,6 +311,8 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
 .cal-daynum{font-size:12px;color:var(--text);font-weight:600;}
 .cal-dots{display:flex;flex-wrap:wrap;gap:3px;margin-top:5px;}
 .cal-dot{width:7px;height:7px;border-radius:50%;display:inline-block;flex-shrink:0;}
+.cal-dot.diamond{width:6px;height:6px;border-radius:1px;transform:rotate(45deg);margin:0 1px;}
+.cal-dot.triangle{width:0;height:0;border-radius:0;background:none;border-left:4px solid transparent;border-right:4px solid transparent;border-bottom:7px solid #888;}
 .cal-more{font-size:9.5px;color:var(--text-light);}
 .cal-legend{display:flex;gap:14px;flex-wrap:wrap;font-size:11px;color:var(--text-light);margin-top:12px;align-items:center;}
 .cal-legend span{display:flex;align-items:center;gap:4px;}
@@ -319,7 +321,8 @@ td textarea::-webkit-scrollbar-button{display:none;height:0;width:0;}
 .cal-item{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;cursor:pointer;font-size:12.5px;}
 .cal-item:hover{background:#fafbfd;}
 .cal-item-board{font-size:10.5px;font-weight:700;padding:2px 7px;border-radius:999px;white-space:nowrap;}
-.cal-item-title{flex:1;color:var(--text);}
+.cal-item-title{flex:1;color:var(--text);min-width:0;}
+.cal-item-content{margin-left:8px;color:var(--text-light);font-weight:400;font-size:12px;}
 
 /* D-day 위젯 */
 .dday-row{display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:1px solid #f0f0f2;}

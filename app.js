@@ -25,6 +25,7 @@
   var CADENCES = ['매일','주간','매달','분기별','반기별','연간'];
   var PERSONAL_BASE_CATS = ['회의','교육','TDM','기타'];
   var MEETING_TYPES = ['주간회의','월간회의','ASP 팀회의'];
+  var LEAVE_TYPES = ['연차','오전반차','오후반차','병가','기타'];
 
   var CAT_COLORS = {
     '교육':  { fg:'#7d7d7d', bg:'#efefef' },
@@ -132,6 +133,35 @@
     for(var i=0;i<str.length;i++){ hash = str.charCodeAt(i) + ((hash<<5)-hash); hash = hash & hash; }
     var hue = Math.abs(hash) % 360;
     return { fg:'hsl('+hue+',55%,38%)', bg:'hsl('+hue+',70%,94%)' };
+  }
+
+  // 분류 색을 직접 고를 수 있도록 하는 색상 팔레트예요. 분류 관리 패널의 색 드롭다운에서 선택하면
+  // 해당 분류 문서에 color(번호)로 저장되고, 안 고르면("자동") 기존 색(없으면 글자 기반 자동 색)을 써요.
+  var COLOR_PALETTE = [
+    { name:'파랑',  fg:'#3b7dd8', bg:'#e8f0fd' },
+    { name:'하늘',  fg:'#2d93b8', bg:'#e3f4fa' },
+    { name:'청록',  fg:'#4aa3a2', bg:'#e6f4f3' },
+    { name:'초록',  fg:'#3fa15e', bg:'#e9f7ee' },
+    { name:'노랑',  fg:'#b8860b', bg:'#fdf3d6' },
+    { name:'주황',  fg:'#d98a3d', bg:'#fdf1e4' },
+    { name:'빨강',  fg:'#c65c5c', bg:'#fbeaea' },
+    { name:'분홍',  fg:'#c9527a', bg:'#fbe4ed' },
+    { name:'보라',  fg:'#8f5fd6', bg:'#f2ecfb' },
+    { name:'회색',  fg:'#7d7d7d', bg:'#efefef' }
+  ];
+  function paletteColor(val){
+    if(val===undefined || val===null || val==='') return null;
+    var c = COLOR_PALETTE[Number(val)];
+    return c || null;
+  }
+  // 분류 관리 패널 각 줄에 붙는 색 선택 드롭다운
+  function colorSelectHtml(collection, docId, current, fallback){
+    var cur = paletteColor(current);
+    var shown = cur || fallback || {fg:'#888',bg:'#f0f0f0'};
+    var opts = '<option value="">자동</option>'+COLOR_PALETTE.map(function(c, i){
+      return '<option value="'+i+'"'+(String(current)===String(i)?' selected':'')+' style="background:'+c.bg+';color:'+c.fg+';">'+c.name+'</option>';
+    }).join('');
+    return '<select class="status-select-sm color-pick-select" title="색상 변경" data-collection="'+collection+'" data-id="'+docId+'" data-field="color" style="background:'+shown.bg+';color:'+shown.fg+';">'+opts+'</select>';
   }
 
   /* ---------------- Utilities ---------------- */
@@ -275,7 +305,7 @@
   }
 
   /* ---------------- Firebase ---------------- */
-  var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false, weeklyMeetingChecked=false, notionImportChecked=false, notionCommsImportChecked=false, notionPersonalImportChecked=false, notionPersonalDayeongImportChecked=false;
+  var db=null, auth=null, storage=null, firebaseReady=false, listenersAttached=false, notionImportChecked=false, notionCommsImportChecked=false, notionPersonalImportChecked=false, notionPersonalDayeongImportChecked=false;
   function setSyncStatus(on, label){
     document.getElementById('syncDot').classList.toggle('on', on);
     document.getElementById('syncLabel').textContent = label;
@@ -342,18 +372,17 @@
     setSyncStatus(false, '동기화 오류 (Firestore 보안 규칙을 확인하세요)');
   }
 
-  var COLLECTIONS = ['tasks','taskCategories','taskMinorCategories','announcements','personal','personalCategories','meetings','ideas','comms','manuals','files','dday','pins','recurring'];
-  var STATE_KEY = { tasks:'tasks', taskCategories:'taskCategories', taskMinorCategories:'taskMinorCategories', announcements:'announcements', personal:'personal', personalCategories:'personalCategories', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'dday', pins:'pins', recurring:'recurring' };
+  var COLLECTIONS = ['tasks','taskCategories','taskMinorCategories','announcements','personal','personalCategories','meetings','ideas','comms','manuals','files','dday','leaves','pins','recurring'];
+  var STATE_KEY = { tasks:'tasks', taskCategories:'taskCategories', taskMinorCategories:'taskMinorCategories', announcements:'announcements', personal:'personal', personalCategories:'personalCategories', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'dday', leaves:'leaves', pins:'pins', recurring:'recurring' };
   // 캘린더 탭은 모든 컬렉션의 날짜를 모아 보여주므로, dday를 포함한 모든 컬렉션 변경이 캘린더도 함께 갱신시켜야 합니다.
   // pins는 사이드바 전용, recurring은 업무 리스트 탭 안의 패널에서 쓰이므로 tasks에 매핑합니다.
-  var TAB_FOR_COLLECTION = { tasks:'tasks', taskCategories:'tasks', taskMinorCategories:'tasks', announcements:'announcements', personal:'personal', personalCategories:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar', pins:null, recurring:'tasks' };
+  var TAB_FOR_COLLECTION = { tasks:'tasks', taskCategories:'tasks', taskMinorCategories:'tasks', announcements:'announcements', personal:'personal', personalCategories:'personal', meetings:'meetings', ideas:'ideas', comms:'comms', manuals:'manuals', files:'files', dday:'calendar', leaves:'calendar', pins:null, recurring:'tasks' };
 
   function attachListeners(){
     COLLECTIONS.forEach(function(col){
       db.collection(col).onSnapshot(function(snap){
         state[STATE_KEY[col]] = snap.docs.map(function(d){ return Object.assign({id:d.id}, d.data()); });
         onDataChanged(TAB_FOR_COLLECTION[col]);
-        if(col==='meetings') ensureWeeklyMeeting();
         if(col==='tasks'){ ensureNotionImport(); migrateLegacyStatusLabel('tasks', state.tasks); }
         if(col==='taskCategories') ensureTaskCategoriesSeed();
         if(col==='taskMinorCategories') ensureTaskMinorCategoriesSeed();
@@ -361,6 +390,7 @@
         if(col==='personal'){ ensureNotionPersonalImport(); ensureNotionPersonalImportDayeong(); migrateLegacyStatusLabel('personal', state.personal); }
         if(col==='personalCategories'){ ensurePersonalCategoriesSeed(); migratePersonalCategoriesToOwner(); }
         if(col==='manuals') migrateRemovedManualCategory();
+        if(col==='files') migrateLegacySingleFiles();
       }, handleSnapError);
     });
   }
@@ -471,6 +501,17 @@
 
   // "개인 공부" 분류를 없앴는데 예전에 그 분류로 저장된 매뉴얼이 있으면 분류 탭 어디에도 안 걸려서
   // 화면에서 안 보이게 될 수 있어요. 그런 문서가 있으면 "기타"로 자동 이동시켜 계속 보이게 합니다.
+  // 자료실은 예전에 문서당 파일 1개(url 필드)만 붙일 수 있었는데, 이제 여러 개 목록(files)으로 바뀌었어요.
+  // 예전 자료는 url을 files 목록으로 옮겨서 그대로 보이게 합니다.
+  function migrateLegacySingleFiles(){
+    if(!db) return;
+    state.files.forEach(function(f){
+      if(!f.url) return;
+      var arr = (f.files||[]).slice();
+      if(!arr.some(function(x){ return x.url===f.url; })) arr.push({ id:uid(), name:f.title||'파일', url:f.url });
+      db.collection('files').doc(f.id).update({ files:arr, url:'' }).catch(function(err){ console.error(err); });
+    });
+  }
   function migrateRemovedManualCategory(){
     if(!db) return;
     state.manuals.forEach(function(m){
@@ -498,27 +539,6 @@
         db.collection('comms').doc(c.id).update({ workCategory:'중재' }).catch(function(err){ console.error(err); });
       }
     });
-  }
-
-  // 매주 금요일 오후 4시 "주간회의"가 없으면 자동으로 만들어줍니다. 문서 ID를 날짜 기반으로 고정해서
-  // 두 사람이 동시에 접속해도 중복 생성되지 않아요.
-  function ensureWeeklyMeeting(){
-    if(!db || weeklyMeetingChecked) return;
-    weeklyMeetingChecked = true;
-    var now = new Date();
-    var dow = now.getDay();
-    var daysUntilFri = (5 - dow + 7) % 7;
-    var fri = new Date(now.getFullYear(), now.getMonth(), now.getDate()+daysUntilFri);
-    var friStr = fri.getFullYear()+'-'+pad2(fri.getMonth()+1)+'-'+pad2(fri.getDate());
-    var id = 'auto-weekly-'+friStr;
-    db.collection('meetings').doc(id).get().then(function(snap){
-      if(!snap.exists){
-        db.collection('meetings').doc(id).set({
-          meetingType:'주간회의', title:'주간회의', date:friStr, time:'16:00',
-          attendees:PEOPLE.slice(), content:'', files:[], clientTs:Date.now(), createdAt:Date.now(), createdBy:'자동 생성'
-        });
-      }
-    }).catch(function(err){ console.error(err); });
   }
 
   // 지수님이 보내주신 노션 "ASP 업무 리스트" 캡처 화면에서 항목을 추출해 한 번만 업무 리스트에 옮겨 담습니다.
@@ -740,17 +760,24 @@
     saveNestedArray(col, docId, 'files', arr);
   }
   // 실제 파일을 Firebase Storage에 업로드합니다 (Blaze 요금제 + Storage 활성화가 되어 있어야 동작해요).
-  function uploadFile(col, docId, file){
+  // 파일을 여러 개 한 번에 골라도 되도록 목록(FileList)을 받아서, 전부 올린 뒤 한 번에 목록에 추가해요.
+  function uploadFile(col, docId, fileOrList){
     if(!requireFirebase()) return;
     if(!storage){ showToast('파일 업로드를 쓰려면 Firebase Storage 설정이 필요해요 (README 6단계 참고)'); return; }
-    var path = col+'/'+docId+'/'+Date.now()+'_'+file.name;
-    var ref = storage.ref().child(path);
-    showToast('업로드 중...');
-    ref.put(file).then(function(snap){ return snap.ref.getDownloadURL(); }).then(function(url){
+    var list = (fileOrList && typeof fileOrList.length==='number') ? Array.prototype.slice.call(fileOrList) : [fileOrList];
+    if(!list.length) return;
+    showToast(list.length>1 ? list.length+'개 파일 업로드 중...' : '업로드 중...');
+    Promise.all(list.map(function(file, i){
+      var path = col+'/'+docId+'/'+Date.now()+'_'+i+'_'+file.name;
+      var ref = storage.ref().child(path);
+      return ref.put(file).then(function(snap){ return snap.ref.getDownloadURL(); }).then(function(url){
+        return { id:uid(), name:file.name, url:url };
+      });
+    })).then(function(added){
       var arr = getNestedArray(col, docId, 'files');
-      arr.push({ id:uid(), name:file.name, url:url });
+      added.forEach(function(a){ arr.push(a); });
       saveNestedArray(col, docId, 'files', arr);
-      showToast('업로드 완료');
+      showToast(added.length>1 ? added.length+'개 업로드 완료' : '업로드 완료');
     }).catch(function(err){
       console.error(err);
       showToast('업로드 실패: '+(err && err.message ? err.message : 'Storage 설정을 확인하세요'));
@@ -814,8 +841,8 @@
     var uploadId = 'upload-'+col+'-'+doc.id;
     return '<div class="filelinks">'+
       (rows ? '<div class="filelinks-list">'+rows+'</div>' : '<div class="comments-empty">첨부된 파일이 없습니다.</div>')+
-      '<input type="file" class="filelink-upload-input hidden" id="'+uploadId+'" data-collection="'+col+'" data-id="'+doc.id+'">'+
-      '<button class="btn ghost sm" type="button" data-action="trigger-upload" data-target="'+uploadId+'">📤 파일 업로드</button>'+
+      '<input type="file" class="filelink-upload-input hidden" id="'+uploadId+'" data-collection="'+col+'" data-id="'+doc.id+'" multiple>'+
+      '<button class="btn ghost sm" type="button" data-action="trigger-upload" data-target="'+uploadId+'">📤 파일 업로드 (여러 개 선택 가능)</button>'+
     '</div>';
   }
 
@@ -865,6 +892,22 @@
         '<button class="btn ghost sm" data-action="add-comment" data-collection="'+col+'" data-id="'+doc.id+'">등록</button>'+
       '</div>'+
     '</div>';
+  }
+
+  /* ---------------- 분류별 표시 색 (직접 고른 색 > 기본 지정 색 > 자동 색) ---------------- */
+  function taskMajorColor(name){
+    var d = findTaskCategoryDoc(name);
+    return (d && paletteColor(d.color)) || CAT_COLORS[name] || hashColor(name);
+  }
+  function taskMinorColor(name, major){
+    if(!name) return {fg:'#888',bg:'#f0f0f0'};
+    var d = findTaskMinorCategoryDoc(name, major||MAJOR_CATS[0]);
+    return (d && paletteColor(d.color)) || MINOR_CAT_COLORS[name] || hashColor(name);
+  }
+  function personalCatColor(name, owner){
+    if(!name) return {fg:'#888',bg:'#f0f0f0'};
+    var d = findPersonalCategoryDoc(name, owner);
+    return (d && paletteColor(d.color)) || PERSONAL_CAT_COLORS[name] || hashColor(name);
   }
 
   /* ---------------- 각자 업무리스트: 분류 옵션 (personalCategories 컬렉션 기반, 지수·다경 각자 따로 관리) ---------------- */
@@ -976,6 +1019,7 @@
       var cnt = state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===c.name; }).length;
       return '<div class="recur-row">'+
         '<span style="flex:1;">'+escapeHtml(c.name)+' <span class="subtab-count">'+cnt+'개 사용중</span></span>'+
+        colorSelectHtml('taskCategories', c.id, c.color, taskMajorColor(c.name))+
         '<button class="icon-btn" data-action="rename-task-category" data-id="'+c.id+'" title="이름 수정">✎</button>'+
         '<button class="icon-btn danger" data-action="delete-task-category" data-id="'+c.id+'" title="삭제">✕</button>'+
       '</div>';
@@ -1048,6 +1092,7 @@
       var cnt = state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===major && (t.minor||'')===c.name; }).length;
       return '<div class="recur-row">'+
         '<span style="flex:1;">'+escapeHtml(c.name)+' <span class="subtab-count">'+cnt+'개 사용중</span></span>'+
+        colorSelectHtml('taskMinorCategories', c.id, c.color, taskMinorColor(c.name, major))+
         '<button class="icon-btn" data-action="rename-task-minor-category" data-id="'+c.id+'" title="이름 수정">✎</button>'+
         '<button class="icon-btn danger" data-action="delete-task-minor-category" data-id="'+c.id+'" title="삭제">✕</button>'+
       '</div>';
@@ -1066,7 +1111,7 @@
   var state = {
     activeTab:'announcements',
     who: localStorage.getItem('asp_share_who') || '',
-    tasks: [], taskCategories: [], taskMinorCategories: [], announcements: [], personal: [], personalCategories: [], meetings: [], ideas: [], comms: [], manuals: [], files: [], dday: [], pins: [], recurring: [],
+    tasks: [], taskCategories: [], taskMinorCategories: [], announcements: [], personal: [], personalCategories: [], meetings: [], ideas: [], comms: [], manuals: [], files: [], dday: [], leaves: [], pins: [], recurring: [],
     taskFilterPerson: 'all',
     taskFilterStatus: 'all',
     taskActiveMajor: '전체',
@@ -1258,9 +1303,22 @@
   }
   function buildCalendarItems(){
     var list = [];
-    state.tasks.forEach(function(t){ if(t.date) list.push({ id:t.id, collection:'tasks', board:'업무 리스트', date:t.date, title:t.title||'(제목 없음)', cls:classifyTask(t) }); });
-    state.personal.forEach(function(p){ if(p.deadline) list.push({ id:p.id, collection:'personal', board:'개별 업무리스트', date:p.deadline, title:p.title||'(제목 없음)', cls:{ type:'개인', owner:p.owner } }); });
-    state.meetings.forEach(function(m){ if(m.date) list.push({ id:m.id, collection:'meetings', board:'회의', date:m.date, title:m.title||'(제목 없음)', cls:{ type:'공동', owner:null } }); });
+    state.tasks.forEach(function(t){ if(t.date) list.push({ id:t.id, collection:'tasks', board:'업무 리스트', date:t.date, title:t.title||'(제목 없음)', content:t.content||'', cls:classifyTask(t), shape:'dot' }); });
+    // 개별 업무리스트는 업무 리스트와 구분되도록 동그라미 대신 마름모(◆) 기호를 써요.
+    state.personal.forEach(function(p){ if(p.deadline) list.push({ id:p.id, collection:'personal', board:'개별 업무리스트', date:p.deadline, title:p.title||'(제목 없음)', content:p.content||'', cls:{ type:'개인', owner:p.owner }, shape:'diamond' }); });
+    state.meetings.forEach(function(m){ if(m.date) list.push({ id:m.id, collection:'meetings', board:'회의', date:m.date, title:m.title||'(제목 없음)', content:'', cls:{ type:'공동', owner:null }, shape:'dot' }); });
+    // 연차: 시작일~종료일 사이 모든 날짜에 삼각형(▲) 기호로 표시해요.
+    state.leaves.forEach(function(l){
+      if(!l.date) return;
+      var end = (l.endDate && l.endDate>=l.date) ? l.endDate : l.date;
+      var cur = new Date(l.date+'T00:00:00'), last = new Date(end+'T00:00:00');
+      var guard = 0;
+      while(cur<=last && guard<60){
+        var ds = cur.getFullYear()+'-'+pad2(cur.getMonth()+1)+'-'+pad2(cur.getDate());
+        list.push({ id:l.id, collection:'leaves', board:'연차', date:ds, title:(l.owner||'')+' '+(l.type||'연차'), content:l.note||'', cls:{ type:'개인', owner:l.owner }, shape:'triangle' });
+        cur.setDate(cur.getDate()+1); guard++;
+      }
+    });
     // 아이디어/공지사항/소통일지/자료실은 날짜가 있어도 캘린더가 너무 복잡해져서 제외했어요.
     // 캘린더에는 업무 리스트 · 개별 업무리스트 · 회의만, 그리고 사이드바에서 직접 챙기는 D-day만 표시됩니다.
     state.dday.forEach(function(d){ if(d.date) list.push({ id:d.id, collection:'dday', board:'중요 일정', date:d.date, title:d.title||'(제목 없음)', cls:{ type:'중요', owner:null } }); });
@@ -1270,6 +1328,11 @@
     // 중요 일정(D-day)과 공동 일정은 항상 보여주고, 개인 일정만 사람별 체크박스로 켜고 끌 수 있어요.
     if(item.cls.type!=='개인') return true;
     return !!state.calShowPersonal[item.cls.owner];
+  }
+  // 표시 모양: 업무 리스트·회의·중요 일정은 동그라미, 개별 업무리스트는 마름모, 연차는 삼각형이에요.
+  function calMarker(it, c, title){
+    var shape = it.shape || 'dot';
+    return '<span class="cal-dot '+shape+'" style="'+(shape==='triangle' ? 'border-bottom-color:' : 'background:')+c.fg+'"'+(title?' title="'+title+'"':'')+'></span>';
   }
   function calItemColor(item){
     if(item.cls.type==='중요') return DDAY_COLOR;
@@ -1298,7 +1361,7 @@
       var cls = 'cal-day';
       if(dateStr===today) cls += ' today';
       if(dateStr===state.calSelectedDate) cls += ' selected';
-      var dots = items.slice(0,4).map(function(it){ var c=calItemColor(it); return '<span class="cal-dot" style="background:'+c.fg+'" title="'+escapeHtml(it.title)+'"></span>'; }).join('');
+      var dots = items.slice(0,4).map(function(it){ var c=calItemColor(it); return calMarker(it, c, escapeHtml(it.title)); }).join('');
       var more = items.length>4 ? '<span class="cal-more">+'+(items.length-4)+'</span>' : '';
       gridHtml += '<div class="'+cls+'" data-action="select-cal-date" data-date="'+dateStr+'"><span class="cal-daynum">'+d+'</span><div class="cal-dots">'+dots+more+'</div></div>';
     }
@@ -1317,10 +1380,13 @@
         (selItems.length ? selItems.map(function(it){
           var c = calItemColor(it);
           var ownerBadge = it.cls.owner ? badge(it.cls.owner, PERSON_COLORS) : '';
-          return '<div class="cal-item" data-action="goto-board" data-tab="'+BOARD_TO_TAB[it.board]+'">'+
-            '<span class="cal-dot" style="background:'+c.fg+'"></span>'+
-            '<span class="cal-item-board" style="color:'+c.fg+';background:'+c.bg+'">'+escapeHtml(it.board)+'</span>'+
-            '<span class="cal-item-title">'+escapeHtml(it.title)+'</span>'+ownerBadge+
+          // 업무 리스트/개별 업무리스트는 기호 모양과 색으로 구분되니 게시판 이름표는 생략하고, 회의·연차·중요 일정만 표시해요.
+          var showBoard = (it.collection!=='tasks' && it.collection!=='personal');
+          var tabAttr = BOARD_TO_TAB[it.board] ? ' data-action="goto-board" data-tab="'+BOARD_TO_TAB[it.board]+'"' : '';
+          return '<div class="cal-item"'+tabAttr+'>'+
+            calMarker(it, c, '')+
+            (showBoard ? '<span class="cal-item-board" style="color:'+c.fg+';background:'+c.bg+'">'+escapeHtml(it.board)+'</span>' : '')+
+            '<span class="cal-item-title"><strong>'+escapeHtml(it.title)+'</strong>'+(it.content ? '<span class="cal-item-content">'+escapeHtml(it.content)+'</span>' : '')+'</span>'+ownerBadge+
           '</div>';
         }).join('') : '<div class="empty-state">이 날짜에 등록된 일정이 없습니다.</div>')+
       '</div>';
@@ -1330,6 +1396,7 @@
         '<div class="card-head"><h3>📌 중요 일정 D-day</h3><button class="btn" data-action="add-dday">+ 중요 일정 추가</button></div>'+
         renderDdayRows()+
       '</div>'+
+      renderLeavePanel(year)+
       '<div class="card">'+
         '<div class="card-head"><h3>📅 '+year+'년 '+(month+1)+'월</h3>'+
           '<div class="toolbar">'+
@@ -1344,9 +1411,52 @@
           '<span><span class="cal-dot" style="background:'+SHARED_COLOR.fg+'"></span> 공동 일정</span>'+
           PEOPLE.map(function(p){ return '<span><span class="cal-dot" style="background:'+PERSON_COLORS[p].fg+'"></span> '+p+' 개인</span>'; }).join('')+
           '<span><span class="cal-dot" style="background:'+DDAY_COLOR.fg+'"></span> 중요 일정</span>'+
+          '<span><span class="cal-dot diamond" style="background:#888"></span> 개별 업무리스트</span>'+
+          '<span><span class="cal-dot triangle" style="border-bottom-color:#888"></span> 연차</span>'+
         '</div>'+
         detailHtml+
       '</div>';
+  }
+
+  /* ---------------- 연차 기록 (지수·다경 각자) ---------------- */
+  // 연차(종일)는 주말을 뺀 평일 수로, 반차는 0.5일로 세요. 병가/기타는 사용 연차에 포함하지 않아요.
+  function leaveDays(l){
+    if(l.type==='오전반차' || l.type==='오후반차') return 0.5;
+    if(l.type!=='연차' && l.type) return 0;
+    if(!l.date) return 0;
+    var end = (l.endDate && l.endDate>=l.date) ? l.endDate : l.date;
+    var cur = new Date(l.date+'T00:00:00'), last = new Date(end+'T00:00:00');
+    var n = 0, guard = 0;
+    while(cur<=last && guard<400){ var wd = cur.getDay(); if(wd!==0 && wd!==6) n++; cur.setDate(cur.getDate()+1); guard++; }
+    return n;
+  }
+  function renderLeavePanel(year){
+    var items = state.leaves.slice().sort(function(a,b){ return (b.date||'').localeCompare(a.date||''); });
+    var summary = PEOPLE.map(function(p){
+      var used = state.leaves.filter(function(l){ return l.owner===p && (l.date||'').slice(0,4)===String(year); })
+        .reduce(function(sum,l){ return sum+leaveDays(l); }, 0);
+      var pc = PERSON_COLORS[p];
+      return '<span class="badge" style="color:'+pc.fg+';background:'+pc.bg+';">'+p+' '+year+'년 사용 연차 '+used+'일</span>';
+    }).join(' ');
+    var rows = items.map(function(l){
+      var ownerOpts = PEOPLE.map(function(p){ return '<option value="'+p+'"'+(l.owner===p?' selected':'')+'>'+p+'</option>'; }).join('');
+      var typeOpts = LEAVE_TYPES.map(function(t){ return '<option value="'+t+'"'+((l.type||'연차')===t?' selected':'')+'>'+t+'</option>'; }).join('');
+      var pc = PERSON_COLORS[l.owner] || SHARED_COLOR;
+      return '<div class="dday-row" data-id="'+l.id+'">'+
+        '<select class="status-select-sm" data-collection="leaves" data-id="'+l.id+'" data-field="owner" style="background:'+pc.bg+';color:'+pc.fg+';">'+ownerOpts+'</select>'+
+        '<select class="status-select-sm" data-collection="leaves" data-id="'+l.id+'" data-field="type">'+typeOpts+'</select>'+
+        '<input type="date" data-collection="leaves" data-id="'+l.id+'" data-field="date" value="'+escapeHtml(l.date||'')+'">'+
+        '<span class="date-arrow">→</span>'+
+        '<input type="date" data-collection="leaves" data-id="'+l.id+'" data-field="endDate" value="'+escapeHtml(l.endDate||'')+'">'+
+        '<input type="text" class="dday-title-input" placeholder="메모 (선택)" data-collection="leaves" data-id="'+l.id+'" data-field="note" value="'+escapeHtml(l.note||'')+'">'+
+        '<button class="icon-btn danger" data-action="del-row" data-collection="leaves" data-id="'+l.id+'" title="삭제">✕</button>'+
+      '</div>';
+    }).join('');
+    return '<div class="card">'+
+      '<div class="card-head"><h3>🏖 연차</h3><button class="btn" data-action="add-leave">+ 연차 추가</button></div>'+
+      '<div style="margin-bottom:10px;display:flex;gap:6px;flex-wrap:wrap;">'+summary+'</div>'+
+      (rows || '<div class="empty-state">등록된 연차가 없습니다. "+ 연차 추가"를 눌러 기록해보세요. (하루만 쓰면 종료일은 비워두세요)</div>')+
+    '</div>';
   }
 
   function renderDdayRows(){
@@ -1471,7 +1581,7 @@
     var allTabs = ['전체'].concat(taskCategoryOptions(null));
     var tabsHtml = allTabs.map(function(cat){
       var cnt = cat==='전체' ? state.tasks.length : state.tasks.filter(function(t){ return (t.major||MAJOR_CATS[0])===cat; }).length;
-      var cc = cat==='전체' ? SHARED_COLOR : (CAT_COLORS[cat] || hashColor(cat));
+      var cc = cat==='전체' ? SHARED_COLOR : taskMajorColor(cat);
       var isActive = cat===activeMajor;
       var style = isActive ? 'background:'+cc.bg+';color:'+cc.fg+';border-color:'+cc.bg+';' : '';
       return '<button class="subtab-btn" data-action="task-set-major" data-major="'+cat+'" style="'+style+'">'+cat+' <span class="subtab-count">'+cnt+'</span></button>';
@@ -1528,13 +1638,13 @@
     var curMajor = t.major || MAJOR_CATS[0];
     var majorOpts = taskCategoryOptions(curMajor).map(function(c){ return '<option value="'+c+'"'+(curMajor===c?' selected':'')+'>'+c+'</option>'; }).join('')+
       '<option value="__new__">+ 직접 추가...</option>';
-    var majorColor = CAT_COLORS[curMajor] || hashColor(curMajor);
+    var majorColor = taskMajorColor(curMajor);
     var curMinor = t.minor || '';
     var minorOptionsList = taskMinorCategoryOptions(curMinor, t.major||MAJOR_CATS[0]);
     var minorOpts = '<option value="">-</option>'+
       minorOptionsList.map(function(c){ return '<option value="'+c+'"'+(curMinor===c?' selected':'')+'>'+escapeHtml(c)+'</option>'; }).join('')+
       '<option value="__new__">+ 직접 추가...</option>';
-    var mnc = MINOR_CAT_COLORS[curMinor] || (curMinor ? hashColor(curMinor) : {fg:'#888',bg:'#f0f0f0'});
+    var mnc = taskMinorColor(curMinor, curMajor);
     var curStatus = t.status||'시작 전';
     var sc = STATUS_COLORS[curStatus] || {fg:'#888',bg:'#eee'};
     var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
@@ -1615,7 +1725,7 @@
     });
     var catTabsHtml = ['전체'].concat(visibleCats).map(function(cat){
       var cnt = cat==='전체' ? ownerItemsAll.length : ownerItemsAll.filter(function(p){ return (p.category||'')===cat; }).length;
-      var cc = cat==='전체' ? SHARED_COLOR : (PERSONAL_CAT_COLORS[cat] || hashColor(cat));
+      var cc = cat==='전체' ? SHARED_COLOR : personalCatColor(cat, owner);
       var isActive = cat===activeCat;
       var style = isActive ? 'background:'+cc.bg+';color:'+cc.fg+';border-color:'+cc.bg+';' : '';
       return '<button class="subtab-btn" data-action="personal-set-category" data-category="'+escapeHtml(cat)+'" style="'+style+'">'+escapeHtml(cat)+' <span class="subtab-count">'+cnt+'</span></button>';
@@ -1657,6 +1767,7 @@
       var cnt = state.personal.filter(function(p){ return p.category===c.name && p.owner===owner; }).length;
       return '<div class="recur-row">'+
         '<span style="flex:1;">'+escapeHtml(c.name)+' <span class="subtab-count">'+cnt+'개 사용중</span></span>'+
+        colorSelectHtml('personalCategories', c.id, c.color, personalCatColor(c.name, c.owner))+
         '<button class="icon-btn" data-action="rename-personal-category" data-id="'+c.id+'" title="이름 수정">✎</button>'+
         '<button class="icon-btn danger" data-action="delete-personal-category" data-id="'+c.id+'" title="삭제">✕</button>'+
       '</div>';
@@ -1673,7 +1784,7 @@
   function renderPersonalRow(p){
     var catOptions = personalCategoryOptions(p.category, p.owner);
     var catOpts = catOptions.map(function(c){ return '<option value="'+c+'"'+(p.category===c?' selected':'')+'>'+c+'</option>'; }).join('') + '<option value="__new__">+ 직접 추가...</option>';
-    var tc = PERSONAL_CAT_COLORS[p.category] || (p.category ? hashColor(p.category) : {fg:'#888',bg:'#f0f0f0'});
+    var tc = personalCatColor(p.category, p.owner);
     var curStatus = p.status || '시작 전';
     var sc = STATUS_COLORS[curStatus] || {fg:'#888',bg:'#eee'};
     var statusOpts = STATUSES.map(function(s){ return '<option value="'+s+'"'+(curStatus===s?' selected':'')+'>'+s+'</option>'; }).join('');
@@ -1720,10 +1831,11 @@
         '<td style="white-space:nowrap;width:140px;">'+escapeHtml(m.date||'')+(m.time?' '+escapeHtml(m.time):'')+'</td>'+
         '<td class="board-title-cell">'+escapeHtml(m.title||'(제목 없음)')+'</td>'+
         '<td style="width:150px;">'+peopleBadges+'</td>'+
+        '<td style="width:40px;text-align:center;"><button class="icon-btn danger" data-action="del-row" data-collection="meetings" data-id="'+m.id+'" title="삭제">✕</button></td>'+
       '</tr>';
     }).join('');
     var listHtml = items.length ?
-      '<table class="board-table"><thead><tr><th style="width:140px">날짜</th><th>제목</th><th style="width:150px">참석자</th></tr></thead><tbody>'+rows+'</tbody></table>'
+      '<table class="board-table"><thead><tr><th style="width:140px">날짜</th><th>제목</th><th style="width:150px">참석자</th><th style="width:40px"></th></tr></thead><tbody>'+rows+'</tbody></table>'
       : '<div class="empty-state">등록된 회의록이 없습니다.</div>';
     return '<div class="card">'+
       '<div class="card-head"><h3>🗓 회의</h3><button class="btn" data-action="add-meeting" data-type="'+activeType+'">+ 새 회의 기록</button></div>'+
@@ -1942,7 +2054,7 @@
     }).join('');
     var rows = items.map(function(f){
       return '<tr class="board-row" data-action="open-file" data-id="'+f.id+'">'+
-        '<td class="board-title-cell">'+escapeHtml(f.title||'(제목 없음)')+(f.url?' <span class="manual-file-count">📎</span>':'')+'</td>'+
+        '<td class="board-title-cell">'+escapeHtml(f.title||'(제목 없음)')+(((f.files||[]).length || f.url)?' <span class="manual-file-count">📎'+((f.files||[]).length>1?' '+(f.files||[]).length:'')+'</span>':'')+'</td>'+
         '<td class="task-content-preview" style="width:100px;">'+escapeHtml(f.date||'')+'</td>'+
         '<td class="task-content-preview" style="width:100px;">'+escapeHtml(f.createdBy||'')+'</td>'+
       '</tr>';
@@ -1960,7 +2072,6 @@
     var cat = f.category || FILE_CATS[0];
     var fc = FILE_CAT_COLORS[cat] || {fg:'#888',bg:'#eee'};
     var catOpts = FILE_CATS.map(function(c){ return '<option value="'+c+'"'+(cat===c?' selected':'')+'>'+c+'</option>'; }).join('');
-    var uploadId = 'fileupload-'+f.id;
     return '<div class="card">'+
       '<button class="btn ghost sm" data-action="close-file">← 목록으로</button>'+
       '<div class="doc-item-head" style="margin-top:12px;">'+
@@ -1972,12 +2083,7 @@
         '<input type="date" data-collection="files" data-id="'+f.id+'" data-field="date" value="'+escapeHtml(f.date||todayStr())+'">'+
         '<span class="note-meta">'+escapeHtml(f.createdBy||'')+'</span>'+
       '</div>'+
-      '<div class="filelinks">'+
-        (f.url ? '<div class="filelink-chip" title="'+escapeHtml(f.title||'')+'"><span class="filelink-icon">📄</span><a class="filelink-chip-name" href="'+escapeHtml(f.url)+'" target="_blank" rel="noopener">'+escapeHtml(f.title||'파일')+'</a>'+(previewKind(f.title)==='pdf'?'<span class="filelink-type-badge">PDF</span>':'')+'</div>' : '<div class="comments-empty">업로드된 파일이 없습니다.</div>')+
-        (f.url && previewKind(f.title) === 'image' ? '<img class="filelink-preview-img" src="'+escapeHtml(f.url)+'" loading="lazy" alt="'+escapeHtml(f.title||'')+'">' : '')+
-        '<input type="file" class="filelink-upload-input hidden" id="'+uploadId+'" data-collection="files" data-id="'+f.id+'" data-single="1">'+
-        '<button class="btn ghost sm" type="button" data-action="trigger-upload" data-target="'+uploadId+'">📤 '+(f.url?'파일 교체':'파일 업로드')+'</button>'+
-      '</div>'+
+      renderFileLinks('files', f)+
     '</div>';
   }
 
@@ -2064,6 +2170,7 @@
       });
     }
     else if(action==='add-dday') addRow('dday', { title:'', date:todayStr() });
+    else if(action==='add-leave') addRow('leaves', { owner:(PEOPLE.indexOf(state.who)>-1 ? state.who : PEOPLE[0]), type:'연차', date:todayStr(), endDate:'', note:'' });
     else if(action==='add-recur') addRow('recurring', { label:'', cadence: el.dataset.cadence, lastDonePeriod:'', status:'시작 전', statusPeriod:'' });
     else if(action==='add-pin'){
       var pinInput = document.getElementById('pinQuickInput');
@@ -2328,7 +2435,7 @@
     if(t.type==='file' && t.classList.contains('filelink-upload-input')){
       if(t.files && t.files[0]){
         if(t.dataset.single==='1') uploadSingleField(t.dataset.collection, t.dataset.id, t.files[0]);
-        else uploadFile(t.dataset.collection, t.dataset.id, t.files[0]);
+        else uploadFile(t.dataset.collection, t.dataset.id, t.files);
       }
       return;
     }
@@ -2391,11 +2498,12 @@
       t.style.background = STATUS_COLORS[val].bg; t.style.color = STATUS_COLORS[val].fg;
     }
     if(t.dataset.field==='minor'){
-      var mc2 = MINOR_CAT_COLORS[val] || (val ? hashColor(val) : {fg:'#888',bg:'#f0f0f0'});
+      var itemForMc = state.tasks.find(function(x){ return x.id===t.dataset.id; });
+      var mc2 = taskMinorColor(val, itemForMc ? (itemForMc.major||MAJOR_CATS[0]) : MAJOR_CATS[0]);
       t.style.background = mc2.bg; t.style.color = mc2.fg;
     }
     if(t.dataset.field==='major' && t.dataset.collection==='tasks' && val!=='__new__'){
-      var majc = CAT_COLORS[val] || hashColor(val);
+      var majc = taskMajorColor(val);
       t.style.background = majc.bg; t.style.color = majc.fg;
     }
     if(t.dataset.field==='direction' && DIRECTION_COLORS[val]){
@@ -2415,7 +2523,8 @@
       t.style.background = FILE_CAT_COLORS[val].bg; t.style.color = FILE_CAT_COLORS[val].fg;
     }
     if(t.dataset.field==='category' && t.dataset.collection==='personal' && val!=='__new__'){
-      var hc = PERSONAL_CAT_COLORS[val] || hashColor(val);
+      var itemForHc = state.personal.find(function(x){ return x.id===t.dataset.id; });
+      var hc = personalCatColor(val, itemForHc ? itemForHc.owner : (state.personalActiveOwner||PEOPLE[0]));
       t.style.background = hc.bg; t.style.color = hc.fg;
     }
   });
