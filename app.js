@@ -1396,7 +1396,6 @@
         '<div class="card-head"><h3>📌 중요 일정 D-day</h3><button class="btn" data-action="add-dday">+ 중요 일정 추가</button></div>'+
         renderDdayRows()+
       '</div>'+
-      renderLeavePanel(year)+
       '<div class="card">'+
         '<div class="card-head"><h3>📅 '+year+'년 '+(month+1)+'월</h3>'+
           '<div class="toolbar">'+
@@ -1415,7 +1414,8 @@
           '<span><span class="cal-dot triangle" style="border-bottom-color:#888"></span> 연차</span>'+
         '</div>'+
         detailHtml+
-      '</div>';
+      '</div>'+
+      renderLeavePanel(year);
   }
 
   /* ---------------- 연차 기록 (지수·다경 각자) ---------------- */
